@@ -31,6 +31,8 @@ const VOUCHER_CONFIG: Record<VoucherType, {
   creditLabel: string
   debitNatures: Nature[]
   creditNatures: Nature[]
+  debitCashOrBank: 'ONLY' | 'EXCLUDE' | 'ALLOW'
+  creditCashOrBank: 'ONLY' | 'EXCLUDE' | 'ALLOW'
   partyLabel?: string
 }> = {
   PURCHASE: {
@@ -38,6 +40,8 @@ const VOUCHER_CONFIG: Record<VoucherType, {
     creditLabel:   'How did you pay? (Bank, Cash, or Credit Supplier)',
     debitNatures:  ['EXPENSE', 'ASSET'],
     creditNatures: ['ASSET', 'LIABILITY'],
+    debitCashOrBank: 'EXCLUDE',
+    creditCashOrBank: 'ALLOW',
     partyLabel:    'Supplier / Vendor Name',
   },
   SALE: {
@@ -45,6 +49,8 @@ const VOUCHER_CONFIG: Record<VoucherType, {
     creditLabel:   'What was the income category? (Sales / Revenue Account)',
     debitNatures:  ['ASSET', 'LIABILITY'],
     creditNatures: ['INCOME'],
+    debitCashOrBank: 'ALLOW',
+    creditCashOrBank: 'EXCLUDE',
     partyLabel:    'Customer Name',
   },
   RECEIPT: {
@@ -52,6 +58,8 @@ const VOUCHER_CONFIG: Record<VoucherType, {
     creditLabel:   'Who paid you? (Customer Ledger)',
     debitNatures:  ['ASSET'],
     creditNatures: ['ASSET', 'LIABILITY'],
+    debitCashOrBank: 'ONLY',
+    creditCashOrBank: 'EXCLUDE',
     partyLabel:    'Customer Name',
   },
   PAYMENT: {
@@ -59,6 +67,8 @@ const VOUCHER_CONFIG: Record<VoucherType, {
     creditLabel:   'Paid from which account? (Bank / Cash)',
     debitNatures:  ['EXPENSE', 'LIABILITY', 'ASSET'],
     creditNatures: ['ASSET'],
+    debitCashOrBank: 'EXCLUDE',
+    creditCashOrBank: 'ONLY',
     partyLabel:    'Receiver / Payee Name',
   },
   JOURNAL: {
@@ -66,18 +76,24 @@ const VOUCHER_CONFIG: Record<VoucherType, {
     creditLabel:   'Account to Decrease / Remove funds (-)',
     debitNatures:  ['ASSET','LIABILITY','INCOME','EXPENSE','EQUITY'],
     creditNatures: ['ASSET','LIABILITY','INCOME','EXPENSE','EQUITY'],
+    debitCashOrBank: 'ALLOW',
+    creditCashOrBank: 'ALLOW',
   },
   PURCHASE_RETURN: {
     debitLabel:    'Supplier / Refund Account',
     creditLabel:   'Purchased item being returned',
     debitNatures:  ['LIABILITY','ASSET'],
     creditNatures: ['ASSET','EXPENSE'],
+    debitCashOrBank: 'ALLOW',
+    creditCashOrBank: 'EXCLUDE',
   },
   SALES_RETURN: {
     debitLabel:    'Sales return category',
     creditLabel:   'Customer account (deduct refund)',
     debitNatures:  ['INCOME'],
     creditNatures: ['ASSET','LIABILITY'],
+    debitCashOrBank: 'EXCLUDE',
+    creditCashOrBank: 'ALLOW',
   },
 }
 
@@ -169,8 +185,27 @@ function NewVoucherForm() {
     load()
   }, [typeParam, reset])
 
-  function filterLedgers(natures: Nature[]) {
-    return ledgers.filter(l => natures.includes((l as any).group?.nature))
+  function isCashOrBank(ledger: Ledger) {
+    const name = ledger.name.toLowerCase()
+    return (
+      ledger.id === '10000000-0000-0000-0000-000000000001' || // Cash in Hand
+      ledger.id === '10000000-0000-0000-0000-000000000002' || // Bank Account
+      name.includes('cash') ||
+      name.includes('bank') ||
+      name.includes('petty')
+    )
+  }
+
+  function filterLedgers(natures: Nature[], mode: 'ONLY' | 'EXCLUDE' | 'ALLOW') {
+    return ledgers.filter(l => {
+      const matchNature = natures.includes((l as any).group?.nature)
+      if (!matchNature) return false
+      
+      const isCb = isCashOrBank(l)
+      if (mode === 'ONLY') return isCb
+      if (mode === 'EXCLUDE') return !isCb
+      return true
+    })
   }
 
   async function onSubmit(data: FormValues) {
@@ -192,8 +227,8 @@ function NewVoucherForm() {
     }
   }
 
-  const debitLedgers  = filterLedgers(config.debitNatures)
-  const creditLedgers = filterLedgers(config.creditNatures)
+  const debitLedgers  = filterLedgers(config.debitNatures, config.debitCashOrBank)
+  const creditLedgers = filterLedgers(config.creditNatures, config.creditCashOrBank)
 
   const selectedDebitId = watch('debit_ledger_id')
   const selectedCreditId = watch('credit_ledger_id')
