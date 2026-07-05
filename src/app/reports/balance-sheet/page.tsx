@@ -77,13 +77,13 @@ export default function BalanceSheetPage() {
       </div>
 
       {loading ? (
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1.25rem' }}>
+        <div className="grid-mobile-1" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1.25rem' }}>
           <div className="skeleton" style={{ height: 400, borderRadius: 16 }} />
           <div className="skeleton" style={{ height: 400, borderRadius: 16 }} />
         </div>
       ) : bs ? (
         <>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1.25rem', marginBottom: '1.25rem' }}>
+          <div className="grid-mobile-1" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1.25rem', marginBottom: '1.25rem' }}>
             {/* Assets */}
             <div className="card">
               <div className="card-header">

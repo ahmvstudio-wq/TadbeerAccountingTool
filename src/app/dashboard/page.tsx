@@ -107,7 +107,7 @@ export default function DashboardPage() {
           <h1 className="page-title">Accounting Control Panel</h1>
           <p className="page-subtitle">Real-time business performance analytics and financial overview.</p>
         </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+        <div className="flex-mobile-col" style={{ display: 'flex', alignItems: 'center', gap: '1rem', width: '100%' }}>
           <div className="page-nav-tabs">
             {TOP_TABS.map(tab => (
               <Link key={tab.href} href={tab.href} className="page-nav-tab active-check">

@@ -213,7 +213,7 @@ function EditVoucherForm() {
 
   if (loading) {
     return (
-      <div style={{ display: 'grid', gridTemplateColumns: '1.4fr 1fr', gap: '2rem' }}>
+      <div className="grid-mobile-1" style={{ display: 'grid', gridTemplateColumns: '1.4fr 1fr', gap: '2rem' }}>
         <div className="skeleton" style={{ height: 450, borderRadius: 16 }} />
         <div className="skeleton" style={{ height: 350, borderRadius: 16 }} />
       </div>
@@ -245,7 +245,7 @@ function EditVoucherForm() {
       </div>
 
       {/* Two Column Layout */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1.4fr 1fr', gap: '2rem', alignItems: 'flex-start' }}>
+      <div className="grid-mobile-1" style={{ display: 'grid', gridTemplateColumns: '1.4fr 1fr', gap: '2rem', alignItems: 'flex-start' }}>
         
         {/* Left Column: Input Form Card */}
         <div className="card">
@@ -455,7 +455,7 @@ function EditVoucherForm() {
 export default function EditVoucherPage() {
   return (
     <Suspense fallback={
-      <div style={{ display: 'grid', gridTemplateColumns: '1.4fr 1fr', gap: '2rem' }}>
+      <div className="grid-mobile-1" style={{ display: 'grid', gridTemplateColumns: '1.4fr 1fr', gap: '2rem' }}>
         <div className="skeleton" style={{ height: 450, borderRadius: 16 }} />
         <div className="skeleton" style={{ height: 350, borderRadius: 16 }} />
       </div>
