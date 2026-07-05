@@ -1,0 +1,235 @@
+'use client'
+import { useState, useEffect } from 'react'
+import { supabase } from '@/lib/supabase/client'
+import { TopNav } from './TopNav'
+import { ShieldAlert, LogIn, UserPlus, Lock, Mail, CheckCircle } from 'lucide-react'
+
+const AUTHORIZED_EMAILS = ['w.taufiqq@gmail.com', 'operation@tadbeertt.com']
+
+export function AppShell({ children }: { children: React.ReactNode }) {
+  const [session, setSession] = useState<any>(null)
+  const [loading, setLoading] = useState(true)
+  
+  // Login Form States
+  const [email, setEmail] = useState('')
+  const [password, setPassword] = useState('')
+  const [isSignUp, setIsSignUp] = useState(false)
+  const [errorMsg, setErrorMsg] = useState<string | null>(null)
+  const [successMsg, setSuccessMsg] = useState<string | null>(null)
+  const [authChecking, setAuthChecking] = useState(false)
+
+  useEffect(() => {
+    // 1. Get initial session
+    supabase.auth.getSession().then(({ data: { session: initialSession } }) => {
+      if (initialSession?.user?.email && AUTHORIZED_EMAILS.includes(initialSession.user.email)) {
+        setSession(initialSession)
+      } else if (initialSession) {
+        // If logged in with non-whitelisted email, log out immediately
+        supabase.auth.signOut()
+      }
+      setLoading(false)
+    })
+
+    // 2. Listen for auth changes
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, currentSession) => {
+      if (currentSession?.user?.email && AUTHORIZED_EMAILS.includes(currentSession.user.email)) {
+        setSession(currentSession)
+      } else {
+        setSession(null)
+      }
+    })
+
+    return () => subscription.unsubscribe()
+  }, [])
+
+  async function handleAuth(e: React.FormEvent) {
+    e.preventDefault()
+    setErrorMsg(null)
+    setSuccessMsg(null)
+
+    const normalizedEmail = email.trim().toLowerCase()
+    if (!AUTHORIZED_EMAILS.includes(normalizedEmail)) {
+      setErrorMsg('Access Denied: This email address is not authorized.')
+      return
+    }
+
+    setAuthChecking(true)
+    try {
+      if (isSignUp) {
+        const { error } = await supabase.auth.signUp({
+          email: normalizedEmail,
+          password,
+        })
+        if (error) {
+          setErrorMsg(error.message)
+        } else {
+          setSuccessMsg('Account created successfully! Check your email for confirmation link.')
+        }
+      } else {
+        const { data, error } = await supabase.auth.signInWithPassword({
+          email: normalizedEmail,
+          password,
+        })
+        if (error) {
+          setErrorMsg(error.message)
+        } else if (data.session) {
+          setSession(data.session)
+        }
+      }
+    } catch {
+      setErrorMsg('Authentication error. Please try again.')
+    } finally {
+      setAuthChecking(false)
+    }
+  }
+
+  if (loading) {
+    return (
+      <div style={{
+        minHeight: '100vh', background: 'var(--color-bg)',
+        display: 'flex', alignItems: 'center', justifyContent: 'center'
+      }}>
+        <div className="skeleton" style={{ width: 140, height: 40, borderRadius: 20 }} />
+      </div>
+    )
+  }
+
+  // If user is authenticated and whitelisted, render full application
+  if (session) {
+    return (
+      <div className="app-shell">
+        <TopNav />
+        <main className="main-content">
+          {children}
+        </main>
+      </div>
+    )
+  }
+
+  // Otherwise, render premium, clean Login screen
+  return (
+    <div style={{
+      minHeight: '100vh',
+      background: 'var(--color-bg)',
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      padding: '1.5rem',
+      backgroundImage: 'radial-gradient(rgba(22, 59, 64, 0.04) 1px, transparent 1px)',
+      backgroundSize: '24px 24px',
+    }}>
+      <div className="card" style={{ width: '100%', maxWidth: 440, boxShadow: 'var(--shadow-lg)' }}>
+        
+        {/* Header */}
+        <div className="card-header" style={{ flexDirection: 'column', gap: '0.5rem', alignItems: 'center', padding: '2rem 1.5rem 1.5rem' }}>
+          <div style={{
+            width: 48, height: 48,
+            background: 'var(--color-teal-pale)',
+            borderRadius: '50%',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            color: 'var(--color-teal)', marginBottom: '0.5rem'
+          }}>
+            <img src="/logo.png" alt="Tadbeer" style={{ width: 34, height: 34, objectFit: 'contain' }} />
+          </div>
+          <h2 style={{ fontSize: '1.25rem', fontWeight: 800, color: 'var(--color-teal)', letterSpacing: '-0.02em' }}>
+            Tadbeer Transformations
+          </h2>
+          <p style={{ fontSize: '0.8rem', color: 'var(--color-text-muted)', textAlign: 'center' }}>
+            Secure Corporate Portal. Authorized Personnel Only.
+          </p>
+        </div>
+
+        {/* Form Body */}
+        <form onSubmit={handleAuth}>
+          <div className="card-body" style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
+            
+            {errorMsg && (
+              <div className="alert alert-danger" style={{ fontSize: '0.8rem', padding: '0.75rem 1rem' }}>
+                <ShieldAlert size={16} style={{ flexShrink: 0 }} />
+                <span>{errorMsg}</span>
+              </div>
+            )}
+
+            {successMsg && (
+              <div className="alert alert-success" style={{ fontSize: '0.8rem', padding: '0.75rem 1rem' }}>
+                <CheckCircle size={16} style={{ flexShrink: 0 }} />
+                <span>{successMsg}</span>
+              </div>
+            )}
+
+            {/* Email Field */}
+            <div className="form-group">
+              <label className="form-label">Email Address</label>
+              <div style={{ position: 'relative' }}>
+                <Mail size={16} style={{ position: 'absolute', left: 14, top: '50%', transform: 'translateY(-50%)', color: 'var(--color-text-muted)' }} />
+                <input
+                  type="email" required
+                  className="form-control"
+                  placeholder="name@domain.com"
+                  value={email}
+                  onChange={e => setEmail(e.target.value)}
+                  style={{ paddingLeft: 42 }}
+                />
+              </div>
+            </div>
+
+            {/* Password Field */}
+            <div className="form-group">
+              <label className="form-label">Password</label>
+              <div style={{ position: 'relative' }}>
+                <Lock size={16} style={{ position: 'absolute', left: 14, top: '50%', transform: 'translateY(-50%)', color: 'var(--color-text-muted)' }} />
+                <input
+                  type="password" required
+                  className="form-control"
+                  placeholder="••••••••"
+                  value={password}
+                  onChange={e => setPassword(e.target.value)}
+                  style={{ paddingLeft: 42 }}
+                />
+              </div>
+            </div>
+
+            {/* Action Buttons */}
+            <button
+              type="submit"
+              disabled={authChecking}
+              className="btn btn-primary"
+              style={{ width: '100%', height: 44, marginTop: '0.5rem', fontWeight: 700 }}
+            >
+              {authChecking ? (
+                <span>Authenticating...</span>
+              ) : isSignUp ? (
+                <>
+                  <UserPlus size={16} />
+                  <span>Create Account</span>
+                </>
+              ) : (
+                <>
+                  <LogIn size={16} />
+                  <span>Sign In</span>
+                </>
+              )}
+            </button>
+          </div>
+
+          {/* Toggle Action */}
+          <div className="card-footer" style={{ textAlign: 'center', fontSize: '0.8rem', color: 'var(--color-text-secondary)', display: 'flex', justifyContent: 'center', gap: '4px' }}>
+            <span>{isSignUp ? 'Already registered?' : 'First time signing in?'}</span>
+            <button
+              type="button"
+              className="font-bold"
+              onClick={() => {
+                setIsSignUp(!isSignUp)
+                setErrorMsg(null)
+                setSuccessMsg(null)
+              }}
+              style={{ color: 'var(--color-teal)', textDecoration: 'underline' }}
+            >
+              {isSignUp ? 'Sign In here' : 'Register / Sign Up'}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  )
+}
