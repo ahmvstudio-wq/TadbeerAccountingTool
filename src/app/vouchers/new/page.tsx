@@ -110,7 +110,7 @@ function NewVoucherForm() {
   const config = VOUCHER_CONFIG[typeParam] ?? VOUCHER_CONFIG.PURCHASE
 
   const { register, handleSubmit, watch, reset, formState: { errors, isSubmitting } } = useForm<FormValues>({
-    resolver: zodResolver(voucherSchema),
+    resolver: zodResolver(voucherSchema) as any,
     defaultValues: {
       type:     typeParam,
       date:     new Date().toISOString().split('T')[0],

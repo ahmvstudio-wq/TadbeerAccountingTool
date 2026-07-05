@@ -47,7 +47,7 @@ export async function getExchangeRate(
   try {
     // 1. Try querying the database for a custom defined rate
     const { data } = await supabase
-      .from('exchange_rates' as any)
+      .from('exchange_rates')
       .select('rate')
       .eq('from_currency', from)
       .eq('to_currency', to)
@@ -61,7 +61,7 @@ export async function getExchangeRate(
 
     // 2. Try the inverse rate from DB if present
     const { data: invData } = await supabase
-      .from('exchange_rates' as any)
+      .from('exchange_rates')
       .select('rate')
       .eq('from_currency', to)
       .eq('to_currency', from)

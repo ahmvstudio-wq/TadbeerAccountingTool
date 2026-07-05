@@ -13,7 +13,7 @@ export type VoucherType =
   | 'PURCHASE_RETURN'
   | 'SALES_RETURN'
 
-export interface Group {
+export type Group = {
   id: string
   name: string
   parent_id: string | null
@@ -26,7 +26,7 @@ export interface Group {
   ledgers?: Ledger[]
 }
 
-export interface Ledger {
+export type Ledger = {
   id: string
   name: string
   group_id: string
@@ -39,7 +39,7 @@ export interface Ledger {
   group?: Group
 }
 
-export interface Voucher {
+export type Voucher = {
   id: string
   type: VoucherType
   voucher_number: string | null
@@ -56,7 +56,7 @@ export interface Voucher {
   journal_lines?: JournalLine[]
 }
 
-export interface JournalLine {
+export type JournalLine = {
   id: string
   voucher_id: string
   ledger_id: string
@@ -69,7 +69,7 @@ export interface JournalLine {
   voucher?: Voucher
 }
 
-export interface Settings {
+export type Settings = {
   id: string
   company_name: string
   base_currency: string
@@ -80,6 +80,15 @@ export interface Settings {
   logo_url: string | null
   created_at: string
   updated_at: string
+}
+
+export type ExchangeRate = {
+  id: string
+  from_currency: string
+  to_currency: string
+  rate: number
+  effective_date: string
+  created_at: string
 }
 
 // ============================================================
@@ -178,11 +187,58 @@ export function getCurrencySymbol(code: string): string {
 export type Database = {
   public: {
     Tables: {
-      settings: { Row: Settings; Insert: Partial<Settings>; Update: Partial<Settings> }
-      groups:   { Row: Group;    Insert: Omit<Group, 'id' | 'created_at' | 'updated_at' | 'children' | 'ledgers'>; Update: Partial<Group> }
-      ledgers:  { Row: Ledger;   Insert: Omit<Ledger, 'id' | 'created_at' | 'updated_at' | 'group'>; Update: Partial<Ledger> }
-      vouchers: { Row: Voucher;  Insert: Omit<Voucher, 'id' | 'created_at' | 'updated_at' | 'journal_lines'>; Update: Partial<Voucher> }
-      journal_lines: { Row: JournalLine; Insert: Omit<JournalLine, 'id' | 'created_at' | 'ledger' | 'voucher'>; Update: Partial<JournalLine> }
+      settings: { Row: Settings; Insert: Partial<Settings>; Update: Partial<Settings>; Relationships: [] }
+      groups: {
+        Row: Group
+        Insert: Omit<Group, 'id' | 'created_at' | 'updated_at' | 'children' | 'ledgers'>
+        Update: Partial<Group>
+        Relationships: [
+          {
+            foreignKeyName: "groups_parent_id_fkey"
+            columns: ["parent_id"]
+            isOneToOne: false
+            referencedRelation: "groups"
+            referencedColumns: ["id"]
+          }
+        ]
+      }
+      ledgers: {
+        Row: Ledger
+        Insert: Omit<Ledger, 'id' | 'created_at' | 'updated_at' | 'group'>
+        Update: Partial<Ledger>
+        Relationships: [
+          {
+            foreignKeyName: "ledgers_group_id_fkey"
+            columns: ["group_id"]
+            isOneToOne: false
+            referencedRelation: "groups"
+            referencedColumns: ["id"]
+          }
+        ]
+      }
+      vouchers: { Row: Voucher; Insert: Omit<Voucher, 'id' | 'created_at' | 'updated_at' | 'journal_lines'>; Update: Partial<Voucher>; Relationships: [] }
+      journal_lines: {
+        Row: JournalLine
+        Insert: Omit<JournalLine, 'id' | 'created_at' | 'ledger' | 'voucher'>
+        Update: Partial<JournalLine>
+        Relationships: [
+          {
+            foreignKeyName: "journal_lines_voucher_id_fkey"
+            columns: ["voucher_id"]
+            isOneToOne: false
+            referencedRelation: "vouchers"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "journal_lines_ledger_id_fkey"
+            columns: ["ledger_id"]
+            isOneToOne: false
+            referencedRelation: "ledgers"
+            referencedColumns: ["id"]
+          }
+        ]
+      }
+      exchange_rates: { Row: ExchangeRate; Insert: Omit<ExchangeRate, 'id' | 'created_at'>; Update: Partial<ExchangeRate>; Relationships: [] }
     }
     Views: Record<string, never>
     Functions: Record<string, never>

@@ -112,7 +112,7 @@ function EditVoucherForm() {
   const config = VOUCHER_CONFIG[voucherType] ?? VOUCHER_CONFIG.PURCHASE
 
   const { register, handleSubmit, watch, setValue, formState: { errors, isSubmitting } } = useForm<FormValues>({
-    resolver: zodResolver(voucherSchema),
+    resolver: zodResolver(voucherSchema) as any,
   })
 
   // Load ledgers, settings, voucher record, and ledger balances
@@ -123,7 +123,7 @@ function EditVoucherForm() {
       setLoading(true)
       const [{ data: l }, { data: v }, { data: lines }] = await Promise.all([
         supabase.from('ledgers').select('*, group:groups(id,name,nature)').order('name'),
-        supabase.from('vouchers').select('*, journal_lines(*)').eq('id', idParam).single(),
+        supabase.from('vouchers').select('*, journal_lines(*)').eq('id', idParam!).single(),
         supabase.from('journal_lines').select('ledger_id, type, amount'),
       ])
 

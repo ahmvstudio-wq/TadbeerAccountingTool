@@ -496,7 +496,7 @@ function LedgerFormModal({ groups, ledgerToEdit, onClose, onSaved }: {
   onSaved: () => void
 }) {
   const { register, handleSubmit, formState: { errors, isSubmitting } } = useForm<LedgerForm>({
-    resolver: zodResolver(ledgerSchema),
+    resolver: zodResolver(ledgerSchema) as any,
     defaultValues: ledgerToEdit ? {
       name: ledgerToEdit.name,
       group_id: ledgerToEdit.group_id,

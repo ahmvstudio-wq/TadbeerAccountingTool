@@ -1,6 +1,6 @@
 'use client'
 import { useEffect, useState } from 'react'
-import { Download, RefreshCw, CheckCircle, AlertTriangle } from 'lucide-react'
+import { Download, RefreshCw, CheckCircle, AlertTriangle, AlertCircle } from 'lucide-react'
 import { getBalanceSheet } from '@/lib/accounting'
 import type { BalanceSheet } from '@/lib/types'
 
