@@ -94,7 +94,7 @@ export default function VouchersPage() {
       </div>
 
       {/* Mini Stats Banner — Removes whitespace and populates the layout */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '1rem', marginBottom: '1.75rem' }}>
+      <div className="grid-mobile-2" style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '1rem', marginBottom: '1.75rem' }}>
         <MiniStatCard title="Total Sales volume" value={stats.sales} icon={<TrendingUp size={16} />} color="var(--color-success)" />
         <MiniStatCard title="Total Purchases volume" value={stats.purchases} icon={<ShoppingCart size={16} />} color="#1D4ED8" />
         <MiniStatCard title="Liquidity Inflow" value={stats.receipts} icon={<ArrowDownCircle size={16} />} color="var(--color-teal)" />
@@ -106,7 +106,7 @@ export default function VouchersPage() {
         <div style={{ display: 'flex', gap: '1rem', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap' }}>
           
           {/* Left search + filter */}
-          <div style={{ display: 'flex', gap: '0.75rem', flex: 1, minWidth: 320 }}>
+          <div className="flex-mobile-col" style={{ display: 'flex', gap: '0.75rem', flex: 1, minWidth: '280px' }}>
             <div style={{ position: 'relative', flex: 1 }}>
               <Search size={16} style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: 'var(--color-text-muted)' }} />
               <input
@@ -119,7 +119,7 @@ export default function VouchersPage() {
             </div>
             <select
               className="form-control"
-              style={{ width: 180, height: 38 }}
+              style={{ minWidth: 180, height: 38 }}
               value={typeFilter}
               onChange={e => setTypeFilter(e.target.value as VoucherType | '')}
             >
@@ -223,7 +223,7 @@ export default function VouchersPage() {
             <div className="modal-body" style={{ gap: '1.5rem' }}>
               
               {/* Voucher Meta Info Summary grid */}
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '1rem', background: 'var(--color-surface-alt)', padding: '1rem', borderRadius: 8, border: '1px solid var(--color-border-light)' }}>
+              <div className="grid-mobile-1" style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '1rem', background: 'var(--color-surface-alt)', padding: '1rem', borderRadius: 8, border: '1px solid var(--color-border-light)' }}>
                 <div>
                   <span className="text-xs text-muted" style={{ display: 'block', fontWeight: 600, textTransform: 'uppercase' }}>Classification</span>
                   <span className={`badge voucher-badge-${selectedVoucher.type}`} style={{ marginTop: '2px' }}>{TYPE_LABELS[selectedVoucher.type]}</span>

@@ -121,7 +121,7 @@ export default function MastersPage() {
           <h1 className="page-title">Accounts Ledger Setup</h1>
           <p className="page-subtitle">Configure your custom corporate categories, account folders, and opening balances.</p>
         </div>
-        <div style={{ display: 'flex', gap: '0.75rem' }}>
+        <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap' }}>
           <button className="btn btn-outline" onClick={() => { setActiveGroup(null); setModal('group') }}>
             <Plus size={15} /> Add Group Folder
           </button>

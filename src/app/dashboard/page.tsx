@@ -122,7 +122,7 @@ export default function DashboardPage() {
       </div>
 
       {/* KPI Cards */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '1.25rem', marginBottom: '2rem' }}>
+      <div className="grid-mobile-2" style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '1.25rem', marginBottom: '2rem' }}>
         <KPICard label="Total Income"    value={loading ? null : kpis?.total_income ?? 0}    currency={currency} iconClass="teal"  icon={<TrendingUp size={20} />} />
         <KPICard label="Total Expenses"  value={loading ? null : kpis?.total_expenses ?? 0}  currency={currency} iconClass="red"   icon={<TrendingDown size={20} />} />
         <KPICard label="Net Profit/Loss" value={loading ? null : kpis?.net_profit ?? 0}      currency={currency} iconClass={kpis?.is_profit ? 'green' : 'red'} icon={<DollarSign size={20} />} colored />
@@ -130,7 +130,7 @@ export default function DashboardPage() {
       </div>
 
       {/* Financial Chart Section */}
-      <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: '1.5rem', marginBottom: '2rem' }}>
+      <div className="grid-mobile-1" style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: '1.5rem', marginBottom: '2rem' }}>
         {/* Revenue vs Expenses Chart Card */}
         <div className="card">
           <div className="card-header">
@@ -206,7 +206,7 @@ export default function DashboardPage() {
         </div>
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 340px', gap: '1.5rem' }}>
+      <div className="grid-mobile-1" style={{ display: 'grid', gridTemplateColumns: '1fr 340px', gap: '1.5rem' }}>
         {/* Recent Transactions Table */}
         <div className="card">
           <div className="card-header">
