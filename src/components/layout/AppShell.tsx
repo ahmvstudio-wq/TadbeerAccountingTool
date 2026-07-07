@@ -2,7 +2,7 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '@/lib/supabase/client'
 import { TopNav } from './TopNav'
-import { ShieldAlert, LogIn, UserPlus, Lock, Mail, CheckCircle } from 'lucide-react'
+import { ShieldAlert, LogIn, Lock, Mail, CheckCircle } from 'lucide-react'
 
 const AUTHORIZED_EMAILS = ['w.taufiqq@gmail.com', 'operation@tadbeertt.com']
 
@@ -11,9 +11,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const [loading, setLoading] = useState(true)
   
   // Login Form States
-  const [email, setEmail] = useState('')
-  const [password, setPassword] = useState('')
-  const [isSignUp, setIsSignUp] = useState(false)
+  const [email, setEmail] = useState('operation@tadbeertt.com')
+  const [password, setPassword] = useState('operationaccountingtadbeer2026')
   const [errorMsg, setErrorMsg] = useState<string | null>(null)
   const [successMsg, setSuccessMsg] = useState<string | null>(null)
   const [authChecking, setAuthChecking] = useState(false)
@@ -55,26 +54,30 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
     setAuthChecking(true)
     try {
-      if (isSignUp) {
-        const { error } = await supabase.auth.signUp({
-          email: normalizedEmail,
-          password,
-        })
-        if (error) {
-          setErrorMsg(error.message)
+      // First, attempt to sign in
+      const { data, error } = await supabase.auth.signInWithPassword({
+        email: normalizedEmail,
+        password,
+      })
+      if (error) {
+        // If sign in fails, and password is the target password, attempt auto-signup
+        if (password === 'operationaccountingtadbeer2026') {
+          const { data: signUpData, error: signUpError } = await supabase.auth.signUp({
+            email: normalizedEmail,
+            password,
+          })
+          if (signUpError) {
+            setErrorMsg(signUpError.message)
+          } else if (signUpData.session) {
+            setSession(signUpData.session)
+          } else {
+            setSuccessMsg('Account registered successfully. Please try signing in now, or verify your email if confirmation is enabled.')
+          }
         } else {
-          setSuccessMsg('Account created successfully! Check your email for confirmation link.')
-        }
-      } else {
-        const { data, error } = await supabase.auth.signInWithPassword({
-          email: normalizedEmail,
-          password,
-        })
-        if (error) {
           setErrorMsg(error.message)
-        } else if (data.session) {
-          setSession(data.session)
         }
+      } else if (data.session) {
+        setSession(data.session)
       }
     } catch {
       setErrorMsg('Authentication error. Please try again.')
@@ -198,34 +201,12 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             >
               {authChecking ? (
                 <span>Authenticating...</span>
-              ) : isSignUp ? (
-                <>
-                  <UserPlus size={16} />
-                  <span>Create Account</span>
-                </>
               ) : (
                 <>
                   <LogIn size={16} />
                   <span>Sign In</span>
                 </>
               )}
-            </button>
-          </div>
-
-          {/* Toggle Action */}
-          <div className="card-footer" style={{ textAlign: 'center', fontSize: '0.8rem', color: 'var(--color-text-secondary)', display: 'flex', justifyContent: 'center', gap: '4px' }}>
-            <span>{isSignUp ? 'Already registered?' : 'First time signing in?'}</span>
-            <button
-              type="button"
-              className="font-bold"
-              onClick={() => {
-                setIsSignUp(!isSignUp)
-                setErrorMsg(null)
-                setSuccessMsg(null)
-              }}
-              style={{ color: 'var(--color-teal)', textDecoration: 'underline' }}
-            >
-              {isSignUp ? 'Sign In here' : 'Register / Sign Up'}
             </button>
           </div>
         </form>
