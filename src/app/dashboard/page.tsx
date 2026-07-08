@@ -13,6 +13,7 @@ import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
   AreaChart, Area
 } from 'recharts'
+import { useUIStore } from '@/store/ui'
 
 const QUICK_ACTIONS = [
   { label: 'New Purchase',  type: 'PURCHASE', icon: <ShoppingCart size={15} />,    color: '#1D4ED8' },
@@ -35,6 +36,9 @@ const TOP_TABS = [
 ]
 
 export default function DashboardPage() {
+  const activeCompanyId = useUIStore(state => state.activeCompanyId)
+  const currentCompanyId = activeCompanyId || 'c0de0000-0000-0000-0000-000000000000'
+
   const [kpis, setKpis] = useState<{
     total_income: number; total_expenses: number; net_profit: number;
     is_profit: boolean; voucher_count: number;
@@ -52,14 +56,19 @@ export default function DashboardPage() {
     async function load() {
       setLoading(true)
       try {
-        const { data: settings } = await supabase.from('settings').select('base_currency').single()
+        const { data: settings } = (await supabase
+          .from('settings')
+          .select('base_currency')
+          .eq('company_id', currentCompanyId)
+          .single()) as any
         if (settings) setCurrency(settings.base_currency)
 
-        // Load lines to build reports/KPIs
-        const { data: lines } = await supabase
+        // Load lines to build reports/KPIs scoped to active company
+        const { data: lines } = (await supabase
           .from('journal_lines')
           .select('type, amount, date, ledger:ledgers(group:groups(nature))')
-          .gte('date', fromDate).lte('date', toDate)
+          .eq('company_id', currentCompanyId)
+          .gte('date', fromDate).lte('date', toDate)) as any
 
         let income = 0, expenses = 0
         const monthlyMap: Record<string, { month: string; income: number; expenses: number }> = {}
@@ -89,15 +98,26 @@ export default function DashboardPage() {
         const formattedChartData = monthNames.map(m => monthlyMap[m])
         setChartData(formattedChartData)
 
-        const { count } = await supabase.from('vouchers').select('*', { count: 'exact', head: true })
+        // Count vouchers scoped to active company
+        const { count } = await supabase
+          .from('vouchers')
+          .select('*', { count: 'exact', head: true })
+          .eq('company_id', currentCompanyId)
+
         setKpis({ total_income: income, total_expenses: expenses, net_profit: income - expenses, is_profit: income >= expenses, voucher_count: count ?? 0 })
 
-        const { data: vouchers } = await supabase.from('vouchers').select('*').order('created_at', { ascending: false }).limit(6)
+        // Load recent vouchers scoped to active company
+        const { data: vouchers } = await supabase
+          .from('vouchers')
+          .select('*')
+          .eq('company_id', currentCompanyId)
+          .order('created_at', { ascending: false })
+          .limit(6)
         setRecentVouchers(vouchers ?? [])
       } finally { setLoading(false) }
     }
     load()
-  }, [])
+  }, [currentCompanyId])
 
   return (
     <div>
@@ -235,7 +255,7 @@ export default function DashboardPage() {
                       <td><span className={`badge voucher-badge-${v.type}`}>{VOUCHER_TYPE_LABELS[v.type]}</span></td>
                       <td>{v.party_name || <span className="text-muted">—</span>}</td>
                       <td style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums', fontWeight: 700 }}>
-                        {v.currency} {Number(v.amount).toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                        {v.currency} {Number(v.amount).toLocaleString('en-US', { minimumFractionDigits: 3 })}
                       </td>
                     </tr>
                   ))}
@@ -296,7 +316,7 @@ function KPICard({ label, value, currency, icon, iconClass, colored, noFormat }:
       {value === null
         ? <div className="skeleton" style={{ height: 32, borderRadius: 6 }} />
         : <div className={`kpi-value${colored ? (isPositive ? ' positive' : ' negative') : ''}`}>
-            {noFormat ? value.toLocaleString() : `${currency} ${Math.abs(value).toLocaleString('en-US', { minimumFractionDigits: 2 })}`}
+            {noFormat ? value.toLocaleString() : `${currency} ${Math.abs(value).toLocaleString('en-US', { minimumFractionDigits: 3 })}`}
           </div>
       }
     </div>

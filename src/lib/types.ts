@@ -13,15 +13,20 @@ export type VoucherType =
   | 'PURCHASE_RETURN'
   | 'SALES_RETURN'
 
-export type Group = {
+export type DbGroup = {
   id: string
   name: string
   parent_id: string | null
   nature: Nature
   is_system: boolean
   sort_order: number
+  company_id: string
   created_at: string
   updated_at: string
+  created_by?: string | null
+}
+
+export type Group = DbGroup & {
   children?: Group[]
   ledgers?: Ledger[]
 }
@@ -36,6 +41,9 @@ export type Ledger = {
   description: string | null
   created_at: string
   updated_at: string
+  account_code: string
+  classification: 'Personal' | 'Real' | 'Nominal'
+  company_id: string
   group?: Group
 }
 
@@ -51,6 +59,8 @@ export type Voucher = {
   currency: string
   exchange_rate: number
   notes: string | null
+  narration: string
+  company_id: string
   created_at: string
   updated_at: string
   journal_lines?: JournalLine[]
@@ -78,6 +88,7 @@ export type Settings = {
   phone: string | null
   email: string | null
   logo_url: string | null
+  company_id: string
   created_at: string
   updated_at: string
 }
@@ -88,6 +99,7 @@ export type ExchangeRate = {
   to_currency: string
   rate: number
   effective_date: string
+  company_id: string
   created_at: string
 }
 
@@ -189,56 +201,27 @@ export type Database = {
     Tables: {
       settings: { Row: Settings; Insert: Partial<Settings>; Update: Partial<Settings>; Relationships: [] }
       groups: {
-        Row: Group
-        Insert: Omit<Group, 'id' | 'created_at' | 'updated_at' | 'children' | 'ledgers'>
-        Update: Partial<Group>
-        Relationships: [
-          {
-            foreignKeyName: "groups_parent_id_fkey"
-            columns: ["parent_id"]
-            isOneToOne: false
-            referencedRelation: "groups"
-            referencedColumns: ["id"]
-          }
-        ]
+        Row: DbGroup
+        Insert: Omit<DbGroup, 'id' | 'created_at' | 'updated_at'>
+        Update: Partial<DbGroup>
+        Relationships: []
       }
       ledgers: {
         Row: Ledger
         Insert: Omit<Ledger, 'id' | 'created_at' | 'updated_at' | 'group'>
         Update: Partial<Ledger>
-        Relationships: [
-          {
-            foreignKeyName: "ledgers_group_id_fkey"
-            columns: ["group_id"]
-            isOneToOne: false
-            referencedRelation: "groups"
-            referencedColumns: ["id"]
-          }
-        ]
+        Relationships: []
       }
       vouchers: { Row: Voucher; Insert: Omit<Voucher, 'id' | 'created_at' | 'updated_at' | 'journal_lines'>; Update: Partial<Voucher>; Relationships: [] }
       journal_lines: {
         Row: JournalLine
         Insert: Omit<JournalLine, 'id' | 'created_at' | 'ledger' | 'voucher'>
         Update: Partial<JournalLine>
-        Relationships: [
-          {
-            foreignKeyName: "journal_lines_voucher_id_fkey"
-            columns: ["voucher_id"]
-            isOneToOne: false
-            referencedRelation: "vouchers"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "journal_lines_ledger_id_fkey"
-            columns: ["ledger_id"]
-            isOneToOne: false
-            referencedRelation: "ledgers"
-            referencedColumns: ["id"]
-          }
-        ]
+        Relationships: []
       }
       exchange_rates: { Row: ExchangeRate; Insert: Omit<ExchangeRate, 'id' | 'created_at'>; Update: Partial<ExchangeRate>; Relationships: [] }
+      companies: { Row: Company; Insert: Omit<Company, 'id' | 'created_at' | 'updated_at'>; Update: Partial<Company>; Relationships: [] }
+      user_companies: { Row: UserCompany; Insert: Omit<UserCompany, 'id' | 'created_at' | 'updated_at'>; Update: Partial<UserCompany>; Relationships: [] }
     }
     Views: Record<string, never>
     Functions: Record<string, never>
@@ -249,3 +232,79 @@ export type Database = {
     }
   }
 }
+
+export type UserRole = 'Admin' | 'Finance Mgr' | 'Accountant' | 'Auditor' | 'Viewer'
+
+export interface Company {
+  id: string
+  name: string
+  created_at: string
+  updated_at: string
+}
+
+export interface UserCompany {
+  id: string
+  user_id: string
+  company_id: string
+  role: UserRole
+  created_at: string
+  updated_at: string
+  company?: Company
+}
+
+export const ROLE_PERMISSIONS: Record<UserRole, {
+  createVouchers: boolean
+  editVouchers: boolean
+  deleteVouchers: boolean
+  chartOfAccounts: boolean
+  viewReports: boolean
+  exportReports: boolean
+  manageUsers: boolean
+}> = {
+  Admin: {
+    createVouchers: true,
+    editVouchers: true,
+    deleteVouchers: true,
+    chartOfAccounts: true,
+    viewReports: true,
+    exportReports: true,
+    manageUsers: true,
+  },
+  'Finance Mgr': {
+    createVouchers: true,
+    editVouchers: true,
+    deleteVouchers: true,
+    chartOfAccounts: true,
+    viewReports: true,
+    exportReports: true,
+    manageUsers: false,
+  },
+  Accountant: {
+    createVouchers: true,
+    editVouchers: false,
+    deleteVouchers: false,
+    chartOfAccounts: false,
+    viewReports: true,
+    exportReports: true,
+    manageUsers: false,
+  },
+  Auditor: {
+    createVouchers: false,
+    editVouchers: false,
+    deleteVouchers: false,
+    chartOfAccounts: false,
+    viewReports: true,
+    exportReports: true,
+    manageUsers: false,
+  },
+  Viewer: {
+    createVouchers: false,
+    editVouchers: false,
+    deleteVouchers: false,
+    chartOfAccounts: false,
+    viewReports: true,
+    exportReports: false,
+    manageUsers: false,
+  },
+}
+

@@ -3,8 +3,13 @@ import { useEffect, useState } from 'react'
 import { Download, RefreshCw, CheckCircle, AlertTriangle, AlertCircle } from 'lucide-react'
 import { getBalanceSheet } from '@/lib/accounting'
 import type { BalanceSheet } from '@/lib/types'
+import { useUIStore } from '@/store/ui'
 
 export default function BalanceSheetPage() {
+  const activeCompanyId = useUIStore(state => state.activeCompanyId)
+  const currentCompanyId = activeCompanyId || 'c0de0000-0000-0000-0000-000000000000'
+  const activeCompanyName = useUIStore(state => state.activeCompanyName) || 'Tadbeer Transformations'
+
   const [bs, setBS] = useState<BalanceSheet | null>(null)
   const [loading, setLoading] = useState(true)
   const [asOfDate, setAsOfDate] = useState(new Date().toISOString().split('T')[0])
@@ -12,12 +17,12 @@ export default function BalanceSheetPage() {
 
   useEffect(() => {
     import('@/lib/supabase/client').then(({ supabase }) => {
-      supabase.from('settings').select('base_currency').single().then(({ data }) => {
+      (supabase.from('settings').select('base_currency').eq('company_id', currentCompanyId).single() as any).then(({ data }: any) => {
         if (data) setCurrency(data.base_currency)
       })
     })
     load()
-  }, [])
+  }, [currentCompanyId])
 
   async function load() {
     setLoading(true)
@@ -30,7 +35,7 @@ export default function BalanceSheetPage() {
   }
 
   function fmt(n: number) {
-    return `${currency} ${Math.abs(n).toLocaleString('en-US', { minimumFractionDigits: 3 })}`
+    return `${currency} ${Math.abs(n).toLocaleString('en-US', { minimumFractionDigits: 3, maximumFractionDigits: 3 })}`
   }
 
   // Group by group_name
@@ -43,12 +48,43 @@ export default function BalanceSheetPage() {
     return map
   }
 
+  // Export CSV
+  function exportCSV() {
+    if (!bs) return
+    const headers = ['Category', 'Group Name', 'Ledger Name', 'Amount (OMR)']
+    const dataRows: string[][] = []
+
+    bs.assets.forEach(r => {
+      dataRows.push(['Assets', r.group_name, r.ledger_name, Math.abs(r.amount).toFixed(3)])
+    })
+    dataRows.push(['Total Assets', '', '', bs.total_assets.toFixed(3)])
+
+    bs.liabilities.forEach(r => {
+      dataRows.push(['Liabilities', r.group_name, r.ledger_name, Math.abs(r.amount).toFixed(3)])
+    })
+    bs.equity.forEach(r => {
+      dataRows.push(['Equity', r.group_name, r.ledger_name, Math.abs(r.amount).toFixed(3)])
+    })
+    dataRows.push(['Total Liabilities & Equity', '', '', bs.total_liabilities_equity.toFixed(3)])
+
+    const csvContent = 'data:text/csv;charset=utf-8,' 
+      + [headers.join(','), ...dataRows.map(e => e.join(','))].join('\n')
+    
+    const encodedUri = encodeURI(csvContent)
+    const link = document.createElement('a')
+    link.setAttribute('href', encodedUri)
+    link.setAttribute('download', `Balance_Sheet_As_Of_${asOfDate}.csv`)
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
+  }
+
   return (
     <div>
       <div className="page-header">
         <div>
           <h1 className="page-title">Balance Sheet</h1>
-          <p className="page-subtitle">The financial position of your business as of a date</p>
+          <p className="page-subtitle">The financial position of the company as of a date</p>
         </div>
         <div className="page-actions">
           {bs && (
@@ -56,11 +92,14 @@ export default function BalanceSheetPage() {
               ? <span className="badge badge-success"><CheckCircle size={12} /> Balanced</span>
               : <span className="badge badge-danger"><AlertTriangle size={12} /> Out of Balance</span>
           )}
-          <button className="btn btn-outline btn-sm" onClick={load} disabled={loading}>
-            <RefreshCw size={14} className={loading ? 'animate-spin' : ''} /> Refresh
+          <button className="btn btn-outline btn-sm" onClick={exportCSV} disabled={loading || !bs}>
+            <Download size={14} /> Export CSV
           </button>
           <button className="btn btn-outline btn-sm" onClick={() => window.print()}>
-            <Download size={14} /> Print
+            <Download size={14} /> Print / PDF
+          </button>
+          <button className="btn btn-outline btn-sm" onClick={load} disabled={loading}>
+            <RefreshCw size={14} className={loading ? 'animate-spin' : ''} /> Refresh
           </button>
         </div>
       </div>
@@ -72,7 +111,9 @@ export default function BalanceSheetPage() {
             <label className="form-label">As of Date</label>
             <input type="date" className="form-control" value={asOfDate} onChange={e => setAsOfDate(e.target.value)} />
           </div>
-          <button className="btn btn-primary" onClick={load} disabled={loading}>Apply</button>
+          <button className="btn btn-primary" onClick={load} disabled={loading} style={{ height: 44 }}>
+            Apply
+          </button>
         </div>
       </div>
 
@@ -83,6 +124,24 @@ export default function BalanceSheetPage() {
         </div>
       ) : bs ? (
         <>
+          {/* Export/Print header */}
+          <div style={{ background: 'var(--color-surface)', border: '1px solid var(--color-border)', borderRadius: 16, padding: '1.5rem 1.75rem', marginBottom: '1.25rem' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '1rem' }}>
+              <div>
+                <h2 style={{ fontSize: '1.1rem', fontWeight: 800, color: 'var(--color-teal)' }}>
+                  Balance Sheet Statement
+                </h2>
+                <p className="text-xs text-muted" style={{ marginTop: 2 }}>
+                  Active Entity: <strong>{activeCompanyName}</strong>
+                </p>
+              </div>
+              <div style={{ textAlign: 'right', fontSize: '0.8rem', color: 'var(--color-text-muted)' }}>
+                <div>Reporting Date: As of {asOfDate}</div>
+                <div>Generated: {new Date().toLocaleString()}</div>
+              </div>
+            </div>
+          </div>
+
           <div className="grid-mobile-1" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1.25rem', marginBottom: '1.25rem' }}>
             {/* Assets */}
             <div className="card">
@@ -130,13 +189,13 @@ export default function BalanceSheetPage() {
             </div>
           </div>
 
-          {/* Balance Check */}
+          {/* Balance Check Warning banner */}
           <div className={`alert ${bs.is_balanced ? 'alert-success' : 'alert-danger'}`}>
             {bs.is_balanced ? <CheckCircle size={16} /> : <AlertCircle size={16} />}
             <span>
               {bs.is_balanced
                 ? `Company Worth balances. Total Value (${fmt(bs.total_assets)}) equals Total Claims & Capital (${fmt(bs.total_liabilities_equity)}).`
-                : `Company Worth does NOT balance by ${fmt(Math.abs(bs.total_assets - bs.total_liabilities_equity))}. Please review your account classifications.`
+                : `⚠ Balance Sheet does NOT balance by ${fmt(Math.abs(bs.total_assets - bs.total_liabilities_equity))}. Check your ledger categories.`
               }
             </span>
           </div>

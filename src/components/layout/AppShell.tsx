@@ -3,6 +3,7 @@ import { useState, useEffect } from 'react'
 import { supabase } from '@/lib/supabase/client'
 import { TopNav } from './TopNav'
 import { ShieldAlert, LogIn, Lock, Mail, CheckCircle } from 'lucide-react'
+import { useUIStore } from '@/store/ui'
 
 const AUTHORIZED_EMAILS = ['w.taufiqq@gmail.com', 'operation@tadbeertt.com']
 
@@ -10,6 +11,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const [session, setSession] = useState<any>(null)
   const [loading, setLoading] = useState(true)
   
+  // Zustand store triggers
+  const setActiveCompany = useUIStore(state => state.setActiveCompany)
+  const setUserRole = useUIStore(state => state.setUserRole)
+
   // Login Form States
   const [email, setEmail] = useState('operation@tadbeertt.com')
   const [password, setPassword] = useState('operationaccountingtadbeer2026')
@@ -17,13 +22,50 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const [successMsg, setSuccessMsg] = useState<string | null>(null)
   const [authChecking, setAuthChecking] = useState(false)
 
+  // Load user companies and roles helper
+  const syncUserSession = async (userSession: any) => {
+    if (!userSession?.user) return
+    const user = userSession.user
+    
+    // Check if membership records exist for the user
+    let { data: memberships } = (await supabase
+      .from('user_companies')
+      .select('role, company:companies(id, name)')
+      .eq('user_id', user.id)) as any
+
+    // Auto-create default admin membership if none exists
+    if (!memberships || memberships.length === 0) {
+      const { error: insErr } = await supabase
+        .from('user_companies')
+        .insert({
+          user_id: user.id,
+          company_id: 'c0de0000-0000-0000-0000-000000000000', // Default company
+          role: 'Admin',
+        } as any)
+
+      if (!insErr) {
+        const { data: defaultMbs } = (await supabase
+          .from('user_companies')
+          .select('role, company:companies(id, name)')
+          .eq('user_id', user.id)) as any
+        memberships = defaultMbs
+      }
+    }
+
+    if (memberships && memberships.length > 0) {
+      const active = memberships[0]
+      setActiveCompany(active.company.id, active.company.name)
+      setUserRole(active.role as any)
+    }
+  }
+
   useEffect(() => {
     // 1. Get initial session
     supabase.auth.getSession().then(({ data: { session: initialSession } }) => {
       if (initialSession?.user?.email && AUTHORIZED_EMAILS.includes(initialSession.user.email)) {
         setSession(initialSession)
+        syncUserSession(initialSession)
       } else if (initialSession) {
-        // If logged in with non-whitelisted email, log out immediately
         supabase.auth.signOut()
       }
       setLoading(false)
@@ -33,8 +75,11 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, currentSession) => {
       if (currentSession?.user?.email && AUTHORIZED_EMAILS.includes(currentSession.user.email)) {
         setSession(currentSession)
+        syncUserSession(currentSession)
       } else {
         setSession(null)
+        setActiveCompany(null, null)
+        setUserRole(null)
       }
     })
 
@@ -60,7 +105,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         password,
       })
       if (error) {
-        // If sign in fails, and password is the target password, attempt auto-signup
+        // If sign in fails, attempt auto-signup
         if (password === 'operationaccountingtadbeer2026') {
           const { data: signUpData, error: signUpError } = await supabase.auth.signUp({
             email: normalizedEmail,
@@ -70,14 +115,16 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             setErrorMsg(signUpError.message)
           } else if (signUpData.session) {
             setSession(signUpData.session)
+            syncUserSession(signUpData.session)
           } else {
-            setSuccessMsg('Account registered successfully. Please try signing in now, or verify your email if confirmation is enabled.')
+            setSuccessMsg('Account registered successfully. Please sign in now.')
           }
         } else {
           setErrorMsg(error.message)
         }
       } else if (data.session) {
         setSession(data.session)
+        syncUserSession(data.session)
       }
     } catch {
       setErrorMsg('Authentication error. Please try again.')
@@ -97,7 +144,6 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     )
   }
 
-  // If user is authenticated and whitelisted, render full application
   if (session) {
     return (
       <div className="app-shell">
@@ -109,7 +155,6 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     )
   }
 
-  // Otherwise, render premium, clean Login screen
   return (
     <div style={{
       minHeight: '100vh',

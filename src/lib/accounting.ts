@@ -1,4 +1,6 @@
-import { supabase } from '@/lib/supabase/client'
+import { supabase as rawSupabase } from '@/lib/supabase/client'
+const supabase = rawSupabase as any
+import { useUIStore } from '@/store/ui'
 import type {
   Group,
   Ledger,
@@ -22,7 +24,6 @@ interface VoucherJournalInput {
   credit_ledger_id: string
   amount: number
   date: string
-  // For JOURNAL type: multiple lines
   journal_lines?: { ledger_id: string; type: EntryType; amount: number }[]
 }
 
@@ -69,6 +70,8 @@ export async function getTrialBalance(
   fromDate?: string,
   toDate?: string
 ): Promise<TrialBalanceRow[]> {
+  const companyId = useUIStore.getState().activeCompanyId || 'c0de0000-0000-0000-0000-000000000000'
+
   let query = supabase
     .from('journal_lines')
     .select(`
@@ -81,9 +84,11 @@ export async function getTrialBalance(
         name,
         opening_balance,
         opening_type,
+        company_id,
         group:groups(id, name, nature)
       )
     `)
+    .eq('company_id', companyId)
 
   if (fromDate) query = query.gte('date', fromDate)
   if (toDate) query = query.lte('date', toDate)
@@ -102,6 +107,26 @@ export async function getTrialBalance(
     opening_type: EntryType
   }> = {}
 
+  // Backfill: Make sure we fetch all ledgers in case they have opening balance but no transactions
+  const { data: allLedgers } = await supabase
+    .from('ledgers')
+    .select('*, group:groups(id, name, nature)')
+    .eq('company_id', companyId)
+
+  for (const l of allLedgers || []) {
+    map[l.id] = {
+      ledger_id: l.id,
+      ledger_name: l.name,
+      group_name: l.group?.name || '',
+      nature: l.group?.nature || 'ASSET',
+      total_dr: 0,
+      total_cr: 0,
+      opening_balance: Number(l.opening_balance ?? 0),
+      opening_type: l.opening_type ?? 'Dr',
+    }
+  }
+
+  // Aggregate transaction journal lines
   for (const line of data ?? []) {
     const l = line.ledger as unknown as Ledger & { group: Group }
     if (!l) continue
@@ -123,7 +148,6 @@ export async function getTrialBalance(
   }
 
   return Object.values(map).map(row => {
-    // Add opening balance to the correct side
     const openingDr = row.opening_type === 'Dr' ? row.opening_balance : 0
     const openingCr = row.opening_type === 'Cr' ? row.opening_balance : 0
     const dr = row.total_dr + openingDr
@@ -217,11 +241,13 @@ export async function getBalanceSheet(
 
 export async function getDashboardKPIs(fromDate: string, toDate: string) {
   const pl = await getProfitAndLoss(fromDate, toDate)
+  const companyId = useUIStore.getState().activeCompanyId || 'c0de0000-0000-0000-0000-000000000000'
 
-  // Cash + Bank balance
+  // Cash + Bank balance scoped
   const { data: cashLines } = await supabase
     .from('journal_lines')
     .select('type, amount, ledger:ledgers(group_id)')
+    .eq('company_id', companyId)
     .lte('date', toDate)
 
   let cashBalance = 0

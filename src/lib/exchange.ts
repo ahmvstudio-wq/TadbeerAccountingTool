@@ -1,4 +1,5 @@
-import { supabase } from '@/lib/supabase/client'
+import { supabase as rawSupabase } from '@/lib/supabase/client'
+const supabase = rawSupabase as any
 
 // Mid-market exchange rates relative to OMR (1 OMR = X units of currency, so rate = 1 / X)
 // Or simply: Rate * Foreign Amount = OMR Amount

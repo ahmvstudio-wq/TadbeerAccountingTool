@@ -1,14 +1,17 @@
 'use client'
 import { useEffect, useState, Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
-import { useForm } from 'react-hook-form'
+import { useForm, Controller } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
-import { ArrowLeft, AlertCircle, BookOpen, Info, RefreshCw } from 'lucide-react'
+import { ArrowLeft, AlertCircle, BookOpen, Info } from 'lucide-react'
 import Link from 'next/link'
-import { supabase } from '@/lib/supabase/client'
+import { supabase as rawSupabase } from '@/lib/supabase/client'
+const supabase = rawSupabase as any
 import type { Ledger, VoucherType, Nature, Voucher } from '@/lib/types'
 import { CURRENCIES } from '@/lib/types'
+import { SearchableSelect } from '@/components/ui/SearchableSelect'
+import { useUIStore } from '@/store/ui'
 
 const TYPE_LABELS: Record<VoucherType, string> = {
   PURCHASE: 'Purchase', SALE: 'Sale', RECEIPT: 'Receipt',
@@ -42,7 +45,7 @@ const VOUCHER_CONFIG: Record<VoucherType, {
     creditNatures: ['ASSET', 'LIABILITY'],
     debitCashOrBank: 'EXCLUDE',
     creditCashOrBank: 'ALLOW',
-    partyLabel:    'Supplier / Vendor Name',
+    partyLabel:    'Supplier / Vendor',
   },
   SALE: {
     debitLabel:    'Where did you receive the money? (Bank, Cash, or Unpaid Customer)',
@@ -51,7 +54,7 @@ const VOUCHER_CONFIG: Record<VoucherType, {
     creditNatures: ['INCOME'],
     debitCashOrBank: 'ALLOW',
     creditCashOrBank: 'EXCLUDE',
-    partyLabel:    'Customer Name',
+    partyLabel:    'Customer',
   },
   RECEIPT: {
     debitLabel:    'Where was it deposited? (Bank / Cash)',
@@ -60,7 +63,7 @@ const VOUCHER_CONFIG: Record<VoucherType, {
     creditNatures: ['ASSET', 'LIABILITY'],
     debitCashOrBank: 'ONLY',
     creditCashOrBank: 'EXCLUDE',
-    partyLabel:    'Customer Name',
+    partyLabel:    'Customer',
   },
   PAYMENT: {
     debitLabel:    'What was paid for? (Expense Category or Supplier)',
@@ -69,7 +72,7 @@ const VOUCHER_CONFIG: Record<VoucherType, {
     creditNatures: ['ASSET'],
     debitCashOrBank: 'EXCLUDE',
     creditCashOrBank: 'ONLY',
-    partyLabel:    'Receiver / Payee Name',
+    partyLabel:    'Receiver / Supplier',
   },
   JOURNAL: {
     debitLabel:    'Account to Increase / Add funds (+)',
@@ -86,6 +89,7 @@ const VOUCHER_CONFIG: Record<VoucherType, {
     creditNatures: ['ASSET','EXPENSE'],
     debitCashOrBank: 'ALLOW',
     creditCashOrBank: 'EXCLUDE',
+    partyLabel:    'Supplier',
   },
   SALES_RETURN: {
     debitLabel:    'Sales return category',
@@ -94,6 +98,7 @@ const VOUCHER_CONFIG: Record<VoucherType, {
     creditNatures: ['ASSET','LIABILITY'],
     debitCashOrBank: 'EXCLUDE',
     creditCashOrBank: 'ALLOW',
+    partyLabel:    'Customer',
   },
 }
 
@@ -101,13 +106,15 @@ const voucherSchema = z.object({
   id:               z.string(),
   type:             z.string(),
   date:             z.string().min(1, 'Date is required'),
+  party_ledger_id:  z.string().optional(),
   party_name:       z.string().optional(),
-  debit_ledger_id:  z.string().min(1, 'Select a ledger'),
-  credit_ledger_id: z.string().min(1, 'Select a ledger'),
+  debit_ledger_id:  z.string().min(1, 'Select a debit account'),
+  credit_ledger_id: z.string().min(1, 'Select a credit account'),
   amount:           z.coerce.number().positive('Amount must be greater than 0'),
   currency:         z.string().min(1),
   ref:              z.string().optional(),
   notes:            z.string().optional(),
+  narration:        z.string().min(1, 'Narration is required'),
 })
 type FormValues = z.infer<typeof voucherSchema>
 
@@ -115,6 +122,9 @@ function EditVoucherForm() {
   const router = useRouter()
   const params = useSearchParams()
   const idParam = params.get('id')
+
+  const activeCompanyId = useUIStore(state => state.activeCompanyId)
+  const currentCompanyId = activeCompanyId || 'c0de0000-0000-0000-0000-000000000000'
 
   const [ledgers, setLedgers] = useState<Ledger[]>([])
   const [submitError, setSubmitError] = useState<string | null>(null)
@@ -127,7 +137,7 @@ function EditVoucherForm() {
 
   const config = VOUCHER_CONFIG[voucherType] ?? VOUCHER_CONFIG.PURCHASE
 
-  const { register, handleSubmit, watch, setValue, formState: { errors, isSubmitting } } = useForm<FormValues>({
+  const { handleSubmit, watch, setValue, control, formState: { errors, isSubmitting } } = useForm<FormValues>({
     resolver: zodResolver(voucherSchema) as any,
   })
 
@@ -138,9 +148,9 @@ function EditVoucherForm() {
     async function load() {
       setLoading(true)
       const [{ data: l }, { data: v }, { data: lines }] = await Promise.all([
-        supabase.from('ledgers').select('*, group:groups(id,name,nature)').order('name'),
-        supabase.from('vouchers').select('*, journal_lines(*)').eq('id', idParam!).single(),
-        supabase.from('journal_lines').select('ledger_id, type, amount'),
+        supabase.from('ledgers').select('*, group:groups(id,name,nature)').eq('company_id', currentCompanyId).order('name'),
+        supabase.from('vouchers').select('*, journal_lines(*)').eq('id', idParam!).eq('company_id', currentCompanyId).single(),
+        supabase.from('journal_lines').select('ledger_id, type, amount').eq('company_id', currentCompanyId),
       ])
 
       const loadedLedgers = l ?? []
@@ -158,12 +168,14 @@ function EditVoucherForm() {
         setValue('type', v.type)
         setValue('date', v.date)
         setValue('ref', v.ref || '')
+        setValue('party_ledger_id', v.party_ledger_id || '')
         setValue('party_name', v.party_name || '')
         setValue('amount', v.amount)
         setValue('currency', v.currency)
         if (drLine) setValue('debit_ledger_id', drLine.ledger_id)
         if (crLine) setValue('credit_ledger_id', crLine.ledger_id)
         setValue('notes', v.notes || '')
+        setValue('narration', v.narration || '')
       }
 
       // Calculate balances locally for instant lookups
@@ -172,7 +184,7 @@ function EditVoucherForm() {
         let bal = Number(ledger.opening_balance ?? 0)
         let oType = ledger.opening_type ?? 'Dr'
 
-        const ledgerLines = (lines ?? []).filter(line => line.ledger_id === ledger.id)
+        const ledgerLines = (lines ?? []).filter((line: any) => line.ledger_id === ledger.id)
         for (const line of ledgerLines) {
           if (line.type === oType) {
             bal += Number(line.amount)
@@ -191,7 +203,7 @@ function EditVoucherForm() {
       setLoading(false)
     }
     load()
-  }, [idParam, setValue])
+  }, [idParam, setValue, currentCompanyId])
 
   function isCashOrBank(ledger: Ledger) {
     const name = ledger.name.toLowerCase()
@@ -216,13 +228,23 @@ function EditVoucherForm() {
     })
   }
 
+  const partyLedgers = voucherType === 'PURCHASE' || voucherType === 'PAYMENT' || voucherType === 'PURCHASE_RETURN'
+    ? ledgers.filter(l => l.group?.name.toLowerCase().includes('creditor') || l.group?.name.toLowerCase().includes('supplier') || l.group?.nature === 'LIABILITY')
+    : ledgers.filter(l => l.group?.name.toLowerCase().includes('debtor') || l.group?.name.toLowerCase().includes('customer') || l.group?.nature === 'ASSET')
+
   async function onSubmit(data: FormValues) {
     setSubmitError(null)
+    const selectedParty = ledgers.find(l => l.id === data.party_ledger_id)
+    const payload = {
+      ...data,
+      party_name: selectedParty ? selectedParty.name : data.party_name,
+      company_id: currentCompanyId,
+    }
     try {
       const res = await fetch('/api/vouchers', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(data),
+        body: JSON.stringify(payload),
       })
       if (!res.ok) {
         const err = await res.json()
@@ -279,7 +301,6 @@ function EditVoucherForm() {
         </div>
       </div>
 
-      {/* Two Column Layout */}
       <div className="grid-mobile-1" style={{ display: 'grid', gridTemplateColumns: '1.4fr 1fr', gap: '2rem', alignItems: 'flex-start' }}>
         
         {/* Left Column: Input Form Card */}
@@ -293,8 +314,8 @@ function EditVoucherForm() {
           </div>
 
           <form onSubmit={handleSubmit(onSubmit)}>
-            <input type="hidden" {...register('id')} />
-            <input type="hidden" {...register('type')} />
+            <input type="hidden" {...control.register('id')} />
+            <input type="hidden" {...control.register('type')} />
             
             <div className="card-body" style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
               {submitError && (
@@ -307,64 +328,173 @@ function EditVoucherForm() {
               <div className="form-grid form-grid-2">
                 <div className="form-group">
                   <label className="form-label required">Posting Date</label>
-                  <input type="date" className={`form-control ${errors.date ? 'error' : ''}`} {...register('date')} />
+                  <Controller
+                    control={control}
+                    name="date"
+                    render={({ field }) => (
+                      <input type="date" className={`form-control ${errors.date ? 'error' : ''}`} {...field} />
+                    )}
+                  />
                   {errors.date && <span className="form-error">{errors.date.message}</span>}
                 </div>
                 <div className="form-group">
                   <label className="form-label">Reference No.</label>
-                  <input className="form-control" {...register('ref')} placeholder="Invoice / adjustment ref" />
+                  <Controller
+                    control={control}
+                    name="ref"
+                    render={({ field }) => (
+                      <input className="form-control" placeholder="Invoice / adjustment ref" {...field} />
+                    )}
+                  />
                 </div>
               </div>
 
               {config.partyLabel && (
                 <div className="form-group">
-                  <label className="form-label">{config.partyLabel}</label>
-                  <input className="form-control" {...register('party_name')} placeholder={`Enter ${config.partyLabel.toLowerCase()}`} />
+                  <label className="form-label required">{config.partyLabel} Account</label>
+                  <Controller
+                    control={control}
+                    name="party_ledger_id"
+                    render={({ field }) => (
+                      <SearchableSelect
+                        ledgers={partyLedgers}
+                        value={field.value || ''}
+                        onChange={(val) => {
+                          field.onChange(val)
+                          const matched = partyLedgers.find(l => l.id === val)
+                          setValue('party_name', matched ? matched.name : '')
+                        }}
+                        placeholder={`Select ${config.partyLabel}`}
+                        error={!!errors.party_ledger_id}
+                      />
+                    )}
+                  />
+                  {errors.party_ledger_id && <span className="form-error">{errors.party_ledger_id.message}</span>}
                 </div>
               )}
 
               <div className="form-group">
                 <label className="form-label required">{config.debitLabel}</label>
-                <select className={`form-control ${errors.debit_ledger_id ? 'error' : ''}`} {...register('debit_ledger_id')}>
-                  <option value="">— Select Account —</option>
-                  {debitLedgers.map(l => <option key={l.id} value={l.id}>{l.name}</option>)}
-                </select>
+                <Controller
+                  control={control}
+                  name="debit_ledger_id"
+                  render={({ field }) => (
+                    <SearchableSelect
+                      ledgers={debitLedgers}
+                      value={field.value}
+                      onChange={field.onChange}
+                      placeholder="Select Debit Account"
+                      error={!!errors.debit_ledger_id}
+                    />
+                  )}
+                />
                 {errors.debit_ledger_id && <span className="form-error">{errors.debit_ledger_id.message}</span>}
               </div>
 
+              {/* Phase 11: Display bank/cash balances for Payments */}
+              {voucherType === 'PAYMENT' && (
+                <div style={{
+                  background: 'var(--color-gold-pale)',
+                  border: '1px solid var(--color-gold)',
+                  borderRadius: 'var(--radius-md)',
+                  padding: '0.75rem 1rem',
+                  fontSize: '0.8rem',
+                }}>
+                  <div style={{ fontWeight: 700, color: 'var(--color-gold-dark)', marginBottom: '4px' }}>
+                    Available Bank & Cash Balances:
+                  </div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '3px' }}>
+                    {ledgers.filter(l => l.name.toLowerCase().includes('bank') || l.id === '10000000-0000-0000-0000-000000000002' || l.id === '10000000-0000-0000-0000-000000000001').map(bank => {
+                      const bal = balances[bank.id]
+                      return (
+                        <div key={bank.id} style={{ display: 'flex', justifyContent: 'space-between', fontFamily: 'monospace' }}>
+                          <span>{bank.name}</span>
+                          <strong>OMR {bal ? bal.balance.toFixed(3) : '0.000'} {bal ? bal.type : 'Dr'}</strong>
+                        </div>
+                      )
+                    })}
+                  </div>
+                </div>
+              )}
+
               <div className="form-group">
                 <label className="form-label required">{config.creditLabel}</label>
-                <select className={`form-control ${errors.credit_ledger_id ? 'error' : ''}`} {...register('credit_ledger_id')}>
-                  <option value="">— Select Account —</option>
-                  {creditLedgers.map(l => <option key={l.id} value={l.id}>{l.name}</option>)}
-                </select>
+                <Controller
+                  control={control}
+                  name="credit_ledger_id"
+                  render={({ field }) => (
+                    <SearchableSelect
+                      ledgers={creditLedgers}
+                      value={field.value}
+                      onChange={field.onChange}
+                      placeholder="Select Credit Account"
+                      error={!!errors.credit_ledger_id}
+                    />
+                  )}
+                />
                 {errors.credit_ledger_id && <span className="form-error">{errors.credit_ledger_id.message}</span>}
               </div>
 
               <div className="form-grid form-grid-2">
                 <div className="form-group">
                   <label className="form-label required">Amount</label>
-                  <input
-                    type="number" step="0.001" min="0"
-                    className={`form-control ${errors.amount ? 'error' : ''}`}
-                    {...register('amount')}
-                    placeholder="0.000"
+                  <Controller
+                    control={control}
+                    name="amount"
+                    render={({ field }) => (
+                      <input
+                        type="number" step="0.001" min="0"
+                        className={`form-control ${errors.amount ? 'error' : ''}`}
+                        placeholder="0.000"
+                        {...field}
+                      />
+                    )}
                   />
                   {errors.amount && <span className="form-error">{errors.amount.message}</span>}
                 </div>
                 <div className="form-group">
                   <label className="form-label required">Transaction Currency</label>
-                  <select className="form-control" {...register('currency')}>
-                    {CURRENCIES.map(c => (
-                      <option key={c.code} value={c.code}>{c.code} — {c.name}</option>
-                    ))}
-                  </select>
+                  <Controller
+                    control={control}
+                    name="currency"
+                    render={({ field }) => (
+                      <select className="form-control" {...field}>
+                        {CURRENCIES.map(c => (
+                          <option key={c.code} value={c.code}>{c.code} — {c.name}</option>
+                        ))}
+                      </select>
+                    )}
+                  />
                 </div>
               </div>
 
+              {/* Phase 2: Narration is Mandatory */}
               <div className="form-group">
-                <label className="form-label">Memo Notes</label>
-                <textarea className="form-control" {...register('notes')} placeholder="Optional description or remarks..." />
+                <label className="form-label required">Narration</label>
+                <Controller
+                  control={control}
+                  name="narration"
+                  render={({ field }) => (
+                    <textarea
+                      className={`form-control ${errors.narration ? 'error' : ''}`}
+                      placeholder="e.g. Annual Elevator Maintenance (January–December 2026)"
+                      style={{ height: 60, paddingTop: 10 }}
+                      {...field}
+                    />
+                  )}
+                />
+                {errors.narration && <span className="form-error">{errors.narration.message}</span>}
+              </div>
+
+              <div className="form-group">
+                <label className="form-label">Memo Notes (Optional)</label>
+                <Controller
+                  control={control}
+                  name="notes"
+                  render={({ field }) => (
+                    <textarea className="form-control" placeholder="Optional description or remarks..." style={{ height: 60, paddingTop: 10 }} {...field} />
+                  )}
+                />
               </div>
             </div>
 
@@ -380,7 +510,6 @@ function EditVoucherForm() {
         {/* Right Column: Interactive Side Panel */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
           
-          {/* Explanation */}
           <div className="card">
             <div className="card-header" style={{ border: 'none', paddingBottom: '0.5rem' }}>
               <div className="card-title" style={{ display: 'flex', alignItems: 'center', gap: '8px', color: 'var(--color-teal)' }}>
@@ -393,23 +522,24 @@ function EditVoucherForm() {
             </div>
           </div>
 
-          {/* Account Auditor */}
           <div className="card">
             <div className="card-header">
               <div className="card-title">Live Account Balances</div>
             </div>
             <div className="card-body" style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
               
-              {/* Debit */}
               <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
                 <span className="text-xs text-muted" style={{ fontWeight: 600 }}>RECEIVING ACCOUNT (VALUE ADDED)</span>
                 {debitLedger ? (
                   <div style={{ background: 'var(--color-surface-alt)', padding: '0.75rem 1rem', borderRadius: 8, border: '1px solid var(--color-border-light)' }}>
-                    <div style={{ fontWeight: 700, fontSize: '0.85rem' }}>{debitLedger.name}</div>
+                    <div style={{ fontWeight: 700, fontSize: '0.85rem' }}>
+                      <span style={{ color: 'var(--color-gold-dark)', marginRight: 4 }}>[{debitLedger.account_code}]</span>
+                      {debitLedger.name}
+                    </div>
                     <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.8rem', marginTop: '4px' }}>
                       <span className="text-muted">Current Balance:</span>
                       <span className="font-semibold" style={{ fontVariantNumeric: 'tabular-nums' }}>
-                        OMR {(balances[debitLedger.id]?.balance ?? 0).toLocaleString('en-US', { minimumFractionDigits: 2 })} {balances[debitLedger.id]?.type === 'Dr' ? '(+)' : '(-)'}
+                        OMR {(balances[debitLedger.id]?.balance ?? 0).toLocaleString('en-US', { minimumFractionDigits: 3 })} {balances[debitLedger.id]?.type}
                       </span>
                     </div>
                   </div>
@@ -418,16 +548,18 @@ function EditVoucherForm() {
                 )}
               </div>
 
-              {/* Credit */}
               <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
                 <span className="text-xs text-muted" style={{ fontWeight: 600 }}>GIVING ACCOUNT (VALUE DEDUCTED)</span>
                 {creditLedger ? (
                   <div style={{ background: 'var(--color-surface-alt)', padding: '0.75rem 1rem', borderRadius: 8, border: '1px solid var(--color-border-light)' }}>
-                    <div style={{ fontWeight: 700, fontSize: '0.85rem' }}>{creditLedger.name}</div>
+                    <div style={{ fontWeight: 700, fontSize: '0.85rem' }}>
+                      <span style={{ color: 'var(--color-gold-dark)', marginRight: 4 }}>[{creditLedger.account_code}]</span>
+                      {creditLedger.name}
+                    </div>
                     <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.8rem', marginTop: '4px' }}>
                       <span className="text-muted">Current Balance:</span>
                       <span className="font-semibold" style={{ fontVariantNumeric: 'tabular-nums' }}>
-                        OMR {(balances[creditLedger.id]?.balance ?? 0).toLocaleString('en-US', { minimumFractionDigits: 2 })} {balances[creditLedger.id]?.type === 'Dr' ? '(+)' : '(-)'}
+                        OMR {(balances[creditLedger.id]?.balance ?? 0).toLocaleString('en-US', { minimumFractionDigits: 3 })} {balances[creditLedger.id]?.type}
                       </span>
                     </div>
                   </div>
@@ -438,7 +570,6 @@ function EditVoucherForm() {
             </div>
           </div>
 
-          {/* Ledger Posting simulation preview */}
           <div className="card">
             <div className="card-header">
               <div className="card-title" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
@@ -452,26 +583,32 @@ function EditVoucherForm() {
                   <thead>
                     <tr>
                       <th>Account Name</th>
-                      <th style={{ textAlign: 'right' }}>Added (+)</th>
-                      <th style={{ textAlign: 'right' }}>Deducted (-)</th>
+                      <th style={{ textAlign: 'right' }}>Debit (Dr)</th>
+                      <th style={{ textAlign: 'right' }}>Credit (Cr)</th>
                     </tr>
                   </thead>
                   <tbody>
                     {debitLedger && (
                       <tr>
-                        <td className="font-medium text-xs">{debitLedger.name}</td>
+                        <td className="font-medium text-xs">
+                          <span style={{ color: 'var(--color-gold-dark)', marginRight: 4 }}>[{debitLedger.account_code}]</span>
+                          {debitLedger.name}
+                        </td>
                         <td style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums', color: 'var(--color-danger)', fontWeight: 600, fontSize: '0.8rem' }}>
-                          {selectedCurrency} {enteredAmount.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                          {selectedCurrency} {enteredAmount.toLocaleString('en-US', { minimumFractionDigits: 3 })}
                         </td>
                         <td style={{ textAlign: 'right', color: 'var(--color-text-muted)', fontSize: '0.8rem' }}>—</td>
                       </tr>
                     )}
                     {creditLedger && (
                       <tr>
-                        <td className="font-medium text-xs">{creditLedger.name}</td>
+                        <td className="font-medium text-xs">
+                          <span style={{ color: 'var(--color-gold-dark)', marginRight: 4 }}>[{creditLedger.account_code}]</span>
+                          {creditLedger.name}
+                        </td>
                         <td style={{ textAlign: 'right', color: 'var(--color-text-muted)', fontSize: '0.8rem' }}>—</td>
                         <td style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums', color: 'var(--color-success)', fontWeight: 600, fontSize: '0.8rem' }}>
-                          {selectedCurrency} {enteredAmount.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                          {selectedCurrency} {enteredAmount.toLocaleString('en-US', { minimumFractionDigits: 3 })}
                         </td>
                       </tr>
                     )}

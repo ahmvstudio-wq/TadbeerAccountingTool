@@ -2,11 +2,14 @@
 import { useEffect, useState, useCallback } from 'react'
 import Link from 'next/link'
 import {
-  Plus, Search, ArrowRight, Eye, X, BookOpen, AlertCircle,
+  Plus, Search, Eye, X, BookOpen, AlertCircle,
   TrendingUp, ShoppingCart, ArrowDownCircle, ArrowUpCircle, Pencil, Trash2
 } from 'lucide-react'
-import { supabase } from '@/lib/supabase/client'
+import { supabase as rawSupabase } from '@/lib/supabase/client'
+const supabase = rawSupabase as any
 import type { Voucher, VoucherType, JournalLine } from '@/lib/types'
+import { ROLE_PERMISSIONS } from '@/lib/types'
+import { useUIStore } from '@/store/ui'
 
 const TYPE_LABELS: Record<VoucherType, string> = {
   PURCHASE: 'Purchase', SALE: 'Sale', RECEIPT: 'Receipt',
@@ -16,6 +19,13 @@ const TYPE_LABELS: Record<VoucherType, string> = {
 const ALL_TYPES = Object.keys(TYPE_LABELS) as VoucherType[]
 
 export default function VouchersPage() {
+  const activeCompanyId = useUIStore(state => state.activeCompanyId)
+  const currentCompanyId = activeCompanyId || 'c0de0000-0000-0000-0000-000000000000'
+  const userRole = useUIStore(state => state.userRole) || 'Admin'
+
+  // Permissions based on Role
+  const permissions = ROLE_PERMISSIONS[userRole] || ROLE_PERMISSIONS.Admin
+
   const [vouchers, setVouchers] = useState<Voucher[]>([])
   const [loading,  setLoading]  = useState(true)
   const [search,   setSearch]   = useState('')
@@ -26,22 +36,54 @@ export default function VouchersPage() {
   const [journalLines, setJournalLines] = useState<(JournalLine & { ledger?: { name: string } })[]>([])
   const [loadingJournal, setLoadingJournal] = useState(false)
 
+  // Deletion modal state
+  const [deleteModalOpen, setDeleteModalOpen] = useState(false)
+  const [voucherToDelete, setVoucherToDelete] = useState<string | null>(null)
+  const [deleteReason, setDeleteReason] = useState('')
+  const [deleteError, setDeleteError] = useState<string | null>(null)
+
   const loadVouchers = useCallback(async () => {
     setLoading(true)
-    let q = supabase.from('vouchers').select('*').order('date', { ascending: false })
+    let q = supabase
+      .from('vouchers')
+      .select('*')
+      .eq('company_id', currentCompanyId)
+      .order('date', { ascending: false })
+    
     if (typeFilter) q = q.eq('type', typeFilter)
     const { data } = await q
     setVouchers(data ?? [])
     setLoading(false)
-  }, [typeFilter])
+  }, [typeFilter, currentCompanyId])
 
   useEffect(() => { loadVouchers() }, [loadVouchers])
 
-  async function deleteVoucher(id: string) {
-    if (!confirm('Are you sure you want to permanently delete this transaction voucher? All balancing ledger postings will be removed.')) return
-    const res = await fetch(`/api/vouchers?id=${id}`, { method: 'DELETE' })
-    if (res.ok) {
-      loadVouchers()
+  const openDeleteModal = (id: string) => {
+    setVoucherToDelete(id)
+    setDeleteReason('')
+    setDeleteError(null)
+    setDeleteModalOpen(true)
+  }
+
+  async function handleDeleteConfirm() {
+    if (!deleteReason.trim()) {
+      setDeleteError('A deletion reason is required.')
+      return
+    }
+    try {
+      const res = await fetch(`/api/vouchers?id=${voucherToDelete}&reason=${encodeURIComponent(deleteReason)}`, {
+        method: 'DELETE',
+      })
+      if (res.ok) {
+        setDeleteModalOpen(false)
+        setVoucherToDelete(null)
+        loadVouchers()
+      } else {
+        const err = await res.json()
+        setDeleteError(err.error || 'Failed to delete voucher.')
+      }
+    } catch {
+      setDeleteError('Network error. Try again.')
     }
   }
 
@@ -64,7 +106,8 @@ export default function VouchersPage() {
     !search ||
     v.party_name?.toLowerCase().includes(search.toLowerCase()) ||
     v.voucher_number?.toLowerCase().includes(search.toLowerCase()) ||
-    v.notes?.toLowerCase().includes(search.toLowerCase())
+    v.notes?.toLowerCase().includes(search.toLowerCase()) ||
+    v.narration?.toLowerCase().includes(search.toLowerCase())
   )
 
   // Calculate local statistics based on currently loaded vouchers
@@ -88,12 +131,14 @@ export default function VouchersPage() {
           <h1 className="page-title">Voucher Registry</h1>
           <p className="page-subtitle">Track, filter, and inspect financial transactions and audit entries.</p>
         </div>
-        <Link href="/vouchers/new" className="btn btn-primary">
-          <Plus size={15} /> New Voucher
-        </Link>
+        {permissions.createVouchers && (
+          <Link href="/vouchers/new" className="btn btn-primary">
+            <Plus size={15} /> New Voucher
+          </Link>
+        )}
       </div>
 
-      {/* Mini Stats Banner — Removes whitespace and populates the layout */}
+      {/* Mini Stats Banner */}
       <div className="grid-mobile-2" style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '1rem', marginBottom: '1.75rem' }}>
         <MiniStatCard title="Total Sales volume" value={stats.sales} icon={<TrendingUp size={16} />} color="var(--color-success)" />
         <MiniStatCard title="Total Purchases volume" value={stats.purchases} icon={<ShoppingCart size={16} />} color="#1D4ED8" />
@@ -111,7 +156,7 @@ export default function VouchersPage() {
               <Search size={16} style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: 'var(--color-text-muted)' }} />
               <input
                 className="form-control"
-                placeholder="Search by party, ID, or notes..."
+                placeholder="Search by party, ID, or narration..."
                 value={search}
                 onChange={e => setSearch(e.target.value)}
                 style={{ paddingLeft: 38, height: 38 }}
@@ -130,7 +175,7 @@ export default function VouchersPage() {
 
           {/* Right quick shortcut creator buttons */}
           <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
-            {ALL_TYPES.slice(0, 4).map(t => (
+            {permissions.createVouchers && ALL_TYPES.slice(0, 4).map(t => (
               <Link key={t} href={`/vouchers/new?type=${t}`} className="btn btn-outline btn-sm">
                 <Plus size={13} /> {TYPE_LABELS[t]}
               </Link>
@@ -162,7 +207,7 @@ export default function VouchersPage() {
                   <th>Date</th>
                   <th>Classification</th>
                   <th>Corporate Party</th>
-                  <th>Narration / Notes</th>
+                  <th>Narration</th>
                   <th style={{ textAlign: 'right' }}>Amount</th>
                   <th style={{ width: 60 }}></th>
                 </tr>
@@ -179,22 +224,29 @@ export default function VouchersPage() {
                     </td>
                     <td className="font-medium">{v.party_name || <span className="text-muted">—</span>}</td>
                     <td className="text-xs text-muted" style={{ maxWidth: 220, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                      {v.notes || '—'}
+                      {v.narration || '—'}
                     </td>
                     <td style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums', fontWeight: 700 }}>
-                      {v.currency} {Number(v.amount).toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                      {v.currency} {Number(v.amount).toLocaleString('en-US', { minimumFractionDigits: 3 })}
                     </td>
                     <td>
                       <div style={{ display: 'flex', gap: '4px', justifyContent: 'flex-end' }} onClick={e => e.stopPropagation()}>
                         <button className="btn btn-ghost btn-sm" style={{ width: 28, height: 28, padding: 0 }} title="Inspect Journal lines" onClick={() => setSelectedVoucher(v)}>
                           <Eye size={13} />
                         </button>
-                        <Link href={`/vouchers/edit?id=${v.id}`} className="btn btn-ghost btn-sm" style={{ width: 28, height: 28, padding: 0, display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }} title="Edit transaction">
-                          <Pencil size={12} style={{ color: 'var(--color-teal)' }} />
-                        </Link>
-                        <button className="btn btn-ghost btn-sm" style={{ width: 28, height: 28, padding: 0 }} title="Delete transaction" onClick={() => deleteVoucher(v.id)}>
-                          <Trash2 size={12} style={{ color: 'var(--color-danger)' }} />
-                        </button>
+                        
+                        {/* Phase 2 & 13 Permission restrictions */}
+                        {permissions.editVouchers ? (
+                          <Link href={`/vouchers/edit?id=${v.id}`} className="btn btn-ghost btn-sm" style={{ width: 28, height: 28, padding: 0, display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }} title="Edit transaction">
+                            <Pencil size={12} style={{ color: 'var(--color-teal)' }} />
+                          </Link>
+                        ) : null}
+                        
+                        {permissions.deleteVouchers ? (
+                          <button className="btn btn-ghost btn-sm" style={{ width: 28, height: 28, padding: 0 }} title="Delete transaction" onClick={() => openDeleteModal(v.id)}>
+                            <Trash2 size={12} style={{ color: 'var(--color-danger)' }} />
+                          </button>
+                        ) : null}
                       </div>
                     </td>
                   </tr>
@@ -205,7 +257,7 @@ export default function VouchersPage() {
         </div>
       </div>
 
-      {/* Journal Inspector Side Modal / Drawer */}
+      {/* Journal Inspector Modal */}
       {selectedVoucher && (
         <div className="modal-overlay" onClick={() => setSelectedVoucher(null)}>
           <div className="modal modal-lg" onClick={e => e.stopPropagation()} style={{ border: '1px solid var(--color-border)' }}>
@@ -221,8 +273,6 @@ export default function VouchersPage() {
             </div>
             
             <div className="modal-body" style={{ gap: '1.5rem' }}>
-              
-              {/* Voucher Meta Info Summary grid */}
               <div className="grid-mobile-1" style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '1rem', background: 'var(--color-surface-alt)', padding: '1rem', borderRadius: 8, border: '1px solid var(--color-border-light)' }}>
                 <div>
                   <span className="text-xs text-muted" style={{ display: 'block', fontWeight: 600, textTransform: 'uppercase' }}>Classification</span>
@@ -235,12 +285,15 @@ export default function VouchersPage() {
                 <div>
                   <span className="text-xs text-muted" style={{ display: 'block', fontWeight: 600, textTransform: 'uppercase' }}>Transaction Amount</span>
                   <span className="font-semibold text-sm" style={{ marginTop: '2px', display: 'block' }}>
-                    {selectedVoucher.currency} {Number(selectedVoucher.amount).toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                    {selectedVoucher.currency} {Number(selectedVoucher.amount).toLocaleString('en-US', { minimumFractionDigits: 3 })}
                   </span>
                 </div>
               </div>
 
-              {/* Journal Table */}
+              <div style={{ padding: '0.5rem 1rem', background: 'var(--color-surface-alt)', border: '1px solid var(--color-border)', borderRadius: 8, fontSize: '0.85rem' }}>
+                <strong>Narration:</strong> {selectedVoucher.narration}
+              </div>
+
               <div className="table-wrapper">
                 {loadingJournal ? (
                   <div style={{ padding: '2rem', textAlign: 'center' }}>Loading ledger logs...</div>
@@ -259,12 +312,12 @@ export default function VouchersPage() {
                         <tr key={line.id || i}>
                           <td className="font-medium">{line.ledger?.name || '—'}</td>
                           <td style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums', color: 'var(--color-danger)' }}>
-                            {line.type === 'Dr' ? Number(line.amount).toLocaleString('en-US', { minimumFractionDigits: 2 }) : '—'}
+                            {line.type === 'Dr' ? Number(line.amount).toLocaleString('en-US', { minimumFractionDigits: 3 }) : '—'}
                           </td>
                           <td style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums', color: 'var(--color-success)' }}>
-                            {line.type === 'Cr' ? Number(line.amount).toLocaleString('en-US', { minimumFractionDigits: 2 }) : '—'}
+                            {line.type === 'Cr' ? Number(line.amount).toLocaleString('en-US', { minimumFractionDigits: 3 }) : '—'}
                           </td>
-                          <td className="text-xs text-muted">{selectedVoucher.notes || 'General posting'}</td>
+                          <td className="text-xs text-muted">{selectedVoucher.narration || 'General posting'}</td>
                         </tr>
                       ))}
                     </tbody>
@@ -275,6 +328,44 @@ export default function VouchersPage() {
 
             <div className="modal-footer">
               <button className="btn btn-outline" onClick={() => setSelectedVoucher(null)}>Dismiss Audit</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Phase 2: Deletion Confirmation with Reason Modal */}
+      {deleteModalOpen && (
+        <div className="modal-overlay" onClick={() => setDeleteModalOpen(false)}>
+          <div className="modal" onClick={e => e.stopPropagation()}>
+            <div className="modal-header">
+              <span className="modal-title" style={{ color: 'var(--color-danger)' }}>Confirm Voucher Deletion</span>
+              <button className="modal-close" onClick={() => setDeleteModalOpen(false)}><X size={18} /></button>
+            </div>
+            <div className="modal-body" style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+              <p style={{ fontSize: '0.9rem' }}>
+                Are you sure you want to delete this voucher? This action will permanently remove all balancing ledger postings.
+              </p>
+              {deleteError && (
+                <div className="alert alert-danger" style={{ fontSize: '0.8rem', padding: '6px 12px' }}>
+                  <span>{deleteError}</span>
+                </div>
+              )}
+              <div className="form-group">
+                <label className="form-label required">Reason for Deletion</label>
+                <textarea
+                  className="form-control"
+                  placeholder="Explain why this transaction is being deleted..."
+                  value={deleteReason}
+                  onChange={e => setDeleteReason(e.target.value)}
+                  style={{ height: 80, paddingTop: 8 }}
+                />
+              </div>
+            </div>
+            <div className="modal-footer">
+              <button className="btn btn-outline" onClick={() => setDeleteModalOpen(false)}>Cancel</button>
+              <button className="btn btn-primary" style={{ background: 'var(--color-danger)' }} onClick={handleDeleteConfirm}>
+                Delete Transaction
+              </button>
             </div>
           </div>
         </div>
@@ -309,7 +400,7 @@ function MiniStatCard({ title, value, icon, color }: {
       <div>
         <span className="text-xs text-muted" style={{ display: 'block', fontWeight: 600 }}>{title}</span>
         <span className="font-semibold text-sm" style={{ fontVariantNumeric: 'tabular-nums' }}>
-          OMR {value.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+          OMR {value.toLocaleString('en-US', { minimumFractionDigits: 3 })}
         </span>
       </div>
     </div>

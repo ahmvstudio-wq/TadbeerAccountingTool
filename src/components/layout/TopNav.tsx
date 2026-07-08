@@ -2,31 +2,46 @@
 import { useState, useEffect } from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { LogOut, Settings } from 'lucide-react'
-import { supabase } from '@/lib/supabase/client'
+import { LogOut, Settings, BarChart3, BookOpen, FileText, LayoutDashboard } from 'lucide-react'
+import { supabase as rawSupabase } from '@/lib/supabase/client'
+const supabase = rawSupabase as any
+import { useUIStore } from '@/store/ui'
 
 const NAV_ITEMS = [
-  { href: '/dashboard',             label: 'Dashboard' },
-  { href: '/masters',               label: 'Chart of Accounts' },
-  { href: '/vouchers',              label: 'Vouchers' },
-  { href: '/reports/trial-balance', label: 'Trial Balance' },
-  { href: '/reports/profit-loss',   label: 'Profit & Loss' },
-  { href: '/reports/balance-sheet', label: 'Balance Sheet' },
+  { href: '/dashboard',             label: 'Dashboard', icon: <LayoutDashboard size={14} /> },
+  { href: '/masters',               label: 'Chart of Accounts', icon: <BookOpen size={14} /> },
+  { href: '/vouchers',              label: 'Vouchers', icon: <FileText size={14} /> },
+  { href: '/reports/ledgers',       label: 'Ledger Statement', icon: <BookOpen size={14} /> },
+  { href: '/reports/payments',      label: 'Payments', icon: <FileText size={14} /> },
+  { href: '/reports/receipts',      label: 'Receipts', icon: <FileText size={14} /> },
+  { href: '/reports/trial-balance', label: 'Trial Balance', icon: <BarChart3 size={14} /> },
+  { href: '/reports/profit-loss',   label: 'P&L', icon: <BarChart3 size={14} /> },
+  { href: '/reports/balance-sheet', label: 'Balance Sheet', icon: <BarChart3 size={14} /> },
 ]
 
 export function TopNav() {
   const pathname = usePathname()
-  const [companyName, setCompanyName] = useState('Tadbeer')
+  const activeCompanyId = useUIStore(state => state.activeCompanyId)
+  const activeCompanyName = useUIStore(state => state.activeCompanyName)
+  const userRole = useUIStore(state => state.userRole)
+  const setActiveCompany = useUIStore(state => state.setActiveCompany)
 
+  const [companies, setCompanies] = useState<{ id: string; name: string }[]>([])
+
+  // Load companies
   useEffect(() => {
-    import('@/lib/supabase/client').then(({ supabase }) => {
-      supabase.from('settings').select('company_name').single().then(({ data }) => {
-        if (data?.company_name) {
-          setCompanyName(data.company_name)
+    async function loadCompanies() {
+      const { data } = await supabase.from('companies').select('id, name')
+      if (data) {
+        setCompanies(data)
+        // Fallback active company if null
+        if (!activeCompanyId && data.length > 0) {
+          setActiveCompany(data[0].id, data[0].name)
         }
-      })
-    })
-  }, [])
+      }
+    }
+    loadCompanies()
+  }, [activeCompanyId, setActiveCompany])
 
   function isActive(href: string) {
     if (href === '/dashboard') return pathname === '/dashboard' || pathname === '/'
@@ -34,54 +49,123 @@ export function TopNav() {
   }
 
   // Split name for display
-  const words = companyName.split(' ')
+  const words = (activeCompanyName || 'Tadbeer Transformations').split(' ')
   const logoName = words[0] || 'Tadbeer'
-  const logoSub = words.slice(1).join(' ') || 'transformations'
+  const logoSub = words.slice(1).join(' ') || 'Transformations'
 
   return (
-    <header className="topnav">
-      {/* Logo */}
-      <Link href="/dashboard" className="topnav-logo">
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img
-          src="/logo.png"
-          alt="Tadbeer"
-          style={{
-            width: 54,
-            height: 54,
-            objectFit: 'contain',
-            objectPosition: 'center',
-            background: 'transparent',
-            border: 'none',
-            padding: 0,
-            display: 'block',
-            mixBlendMode: 'multiply',
-          }}
-        />
-        <div className="topnav-logo-text">
-          <span className="topnav-logo-name">{logoName}</span>
-          <span className="topnav-logo-sub">{logoSub}</span>
-        </div>
-      </Link>
-
-      {/* Right actions */}
-      <div className="topnav-actions">
-        <Link href="/settings" className="topnav-action-btn">
-          <Settings size={15} />
-          <span>Settings</span>
+    <header className="topnav" style={{ display: 'flex', flexDirection: 'column', height: 'auto', padding: '0.5rem 2rem' }}>
+      <div style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: '1px solid var(--color-border-light)', paddingBottom: '0.5rem' }}>
+        {/* Logo */}
+        <Link href="/dashboard" className="topnav-logo">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src="/logo.png"
+            alt="Tadbeer"
+            style={{
+              width: 44,
+              height: 44,
+              objectFit: 'contain',
+              background: 'transparent',
+              mixBlendMode: 'multiply',
+            }}
+          />
+          <div className="topnav-logo-text">
+            <span className="topnav-logo-name" style={{ fontSize: '1rem' }}>{logoName}</span>
+            <span className="topnav-logo-sub" style={{ fontSize: '0.55rem' }}>{logoSub}</span>
+          </div>
         </Link>
 
-        <div className="topnav-user">
-          <div className="topnav-user-avatar">T</div>
-          <div className="topnav-user-info">
-            <span className="topnav-user-name">Admin</span>
-            <span className="topnav-user-role">ADMIN</span>
-          </div>
+        {/* Center: Company Switcher */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <span style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--color-text-secondary)', textTransform: 'uppercase' }}>Active Entity:</span>
+          <select
+            value={activeCompanyId || ''}
+            onChange={e => {
+              const selected = companies.find(c => c.id === e.target.value)
+              if (selected) {
+                setActiveCompany(selected.id, selected.name)
+              }
+            }}
+            style={{
+              height: 34,
+              borderRadius: 'var(--radius-md)',
+              border: '1px solid var(--color-border)',
+              background: 'var(--color-surface)',
+              padding: '0 0.75rem',
+              fontSize: '0.8rem',
+              fontWeight: 700,
+              color: 'var(--color-teal)',
+              outline: 'none',
+              cursor: 'pointer',
+            }}
+          >
+            {companies.map(c => (
+              <option key={c.id} value={c.id}>{c.name}</option>
+            ))}
+          </select>
         </div>
 
-        <button className="topnav-logout" onClick={() => supabase.auth.signOut()} title="Sign Out">
-          <LogOut size={16} />
-        </button>
+        {/* Right actions */}
+        <div className="topnav-actions" style={{ gap: '0.75rem' }}>
+          <Link href="/settings" className="topnav-action-btn" style={{ height: 34, borderRadius: 'var(--radius-md)' }}>
+            <Settings size={14} />
+            <span>Settings</span>
+          </Link>
+
+          <div className="topnav-user" style={{ padding: '0.25rem 0.75rem', borderRadius: 'var(--radius-md)' }}>
+            <div className="topnav-user-avatar" style={{ width: 26, height: 26, fontSize: '0.75rem' }}>
+              {(userRole || 'A').substring(0, 1)}
+            </div>
+            <div className="topnav-user-info">
+              <span className="topnav-user-name" style={{ fontSize: '0.75rem' }}>User Context</span>
+              <span className="topnav-user-role" style={{ fontSize: '0.6rem' }}>{userRole || 'ADMIN'}</span>
+            </div>
+          </div>
+
+          <button className="topnav-logout" style={{ width: 34, height: 34, borderRadius: 'var(--radius-md)' }} onClick={() => supabase.auth.signOut()} title="Sign Out">
+            <LogOut size={14} />
+          </button>
+        </div>
+      </div>
+
+      {/* Navigation Tabs (Row 2) */}
+      <div style={{ width: '100%', display: 'flex', gap: '0.5rem', overflowX: 'auto', padding: '0.4rem 0 0.1rem', scrollbarWidth: 'none' }}>
+        {NAV_ITEMS.map(item => {
+          const active = isActive(item.href)
+          return (
+            <Link
+              key={item.href}
+              href={item.href}
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '6px',
+                padding: '0.35rem 0.85rem',
+                fontSize: '0.75rem',
+                fontWeight: active ? 700 : 500,
+                color: active ? '#fff' : 'var(--color-text-secondary)',
+                backgroundColor: active ? 'var(--color-teal)' : 'transparent',
+                borderRadius: 'var(--radius-sm)',
+                transition: 'all var(--t-fast)',
+                border: active ? '1px solid var(--color-teal)' : '1px solid transparent',
+              }}
+              onMouseEnter={e => {
+                if (!active) {
+                  e.currentTarget.style.backgroundColor = 'var(--color-border-light)'
+                }
+              }}
+              onMouseLeave={e => {
+                if (!active) {
+                  e.currentTarget.style.backgroundColor = 'transparent'
+                }
+              }}
+            >
+              {item.icon}
+              <span>{item.label}</span>
+            </Link>
+          )
+        })}
       </div>
     </header>
   )

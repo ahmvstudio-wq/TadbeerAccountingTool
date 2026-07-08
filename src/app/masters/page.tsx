@@ -1,11 +1,12 @@
 'use client'
 import { useEffect, useState, useCallback } from 'react'
-import { Plus, ChevronDown, ChevronRight, Pencil, Trash2, AlertCircle, X } from 'lucide-react'
+import { Plus, ChevronDown, ChevronRight, Pencil, Trash2, AlertCircle, X, UserPlus, UserCheck } from 'lucide-react'
 import { supabase } from '@/lib/supabase/client'
 import type { Group, Ledger, Nature } from '@/lib/types'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
+import { useUIStore } from '@/store/ui'
 
 const NATURE_LABELS: Record<Nature, string> = {
   ASSET: 'Owned (Asset)',
@@ -17,6 +18,12 @@ const NATURE_LABELS: Record<Nature, string> = {
 const NATURE_BADGE: Record<Nature, string> = {
   ASSET: 'badge-teal', LIABILITY: 'badge-warning', INCOME: 'badge-success',
   EXPENSE: 'badge-danger', EQUITY: 'badge-gold',
+}
+
+const CLASSIFICATION_COLOR: Record<string, string> = {
+  Personal: 'var(--color-gold-dark)',
+  Real: 'var(--color-teal)',
+  Nominal: 'var(--color-text-secondary)',
 }
 
 // ---- Schemas ----
@@ -31,16 +38,21 @@ const ledgerSchema = z.object({
   opening_balance: z.coerce.number().min(0),
   opening_type:    z.enum(['Dr','Cr']),
   description:     z.string().optional(),
+  account_code:    z.string().optional(),
+  classification:  z.enum(['Personal','Real','Nominal']).optional(),
 })
 
 type GroupForm  = z.infer<typeof groupSchema>
 type LedgerForm = z.infer<typeof ledgerSchema>
 
 export default function MastersPage() {
+  const activeCompanyId = useUIStore(state => state.activeCompanyId)
+  const currentCompanyId = activeCompanyId || 'c0de0000-0000-0000-0000-000000000000'
+
   const [groups,  setGroups]  = useState<Group[]>([])
   const [ledgers, setLedgers] = useState<Ledger[]>([])
   const [loading, setLoading] = useState(true)
-  const [modal,   setModal]   = useState<'group' | 'ledger' | 'edit-group' | 'edit-ledger' | null>(null)
+  const [modal,   setModal]   = useState<'group' | 'ledger' | 'edit-group' | 'edit-ledger' | 'customer' | 'supplier' | null>(null)
   
   const [activeGroup, setActiveGroup] = useState<Group | null>(null)
   const [activeLedger, setActiveLedger] = useState<Ledger | null>(null)
@@ -51,13 +63,13 @@ export default function MastersPage() {
   const loadData = useCallback(async () => {
     setLoading(true)
     const [{ data: g }, { data: l }] = await Promise.all([
-      supabase.from('groups').select('*').order('sort_order'),
-      supabase.from('ledgers').select('*, group:groups(id,name,nature)').order('name'),
+      supabase.from('groups').select('*').eq('company_id', currentCompanyId).order('sort_order'),
+      supabase.from('ledgers').select('*, group:groups(id,name,nature)').eq('company_id', currentCompanyId).order('name'),
     ])
     setGroups(g ?? [])
     setLedgers(l ?? [])
     setLoading(false)
-  }, [])
+  }, [currentCompanyId])
 
   useEffect(() => { loadData() }, [loadData])
 
@@ -77,7 +89,7 @@ export default function MastersPage() {
       setError('Cannot delete: this group contains child subgroups or linked accounts.')
       return
     }
-    const res = await fetch(`/api/groups?id=${id}`, { method: 'DELETE' })
+    const res = await fetch(`/api/groups?id=${id}&company_id=${currentCompanyId}`, { method: 'DELETE' })
     if (!res.ok) {
       const err = await res.json()
       setError(err.error || 'Failed to delete group.')
@@ -91,11 +103,12 @@ export default function MastersPage() {
       .from('journal_lines')
       .select('*', { count: 'exact', head: true })
       .eq('ledger_id', id)
+      .eq('company_id', currentCompanyId)
     if ((count ?? 0) > 0) {
       setError('Cannot delete: this account has transaction records posted to it.')
       return
     }
-    const res = await fetch(`/api/ledgers?id=${id}`, { method: 'DELETE' })
+    const res = await fetch(`/api/ledgers?id=${id}&company_id=${currentCompanyId}`, { method: 'DELETE' })
     if (!res.ok) {
       const err = await res.json()
       setError(err.error || 'Failed to delete ledger.')
@@ -122,8 +135,18 @@ export default function MastersPage() {
           <p className="page-subtitle">Configure your custom corporate categories, account folders, and opening balances.</p>
         </div>
         <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap' }}>
-          <button className="btn btn-primary" onClick={() => { setActiveLedger(null); setModal('ledger') }}>
-            <Plus size={15} /> Add Account Ledger
+          {/* Quick creation buttons */}
+          <button className="btn btn-outline btn-sm" onClick={() => setModal('customer')} style={{ borderStyle: 'dashed' }}>
+            <UserPlus size={14} /> Quick Add Customer
+          </button>
+          <button className="btn btn-outline btn-sm" onClick={() => setModal('supplier')} style={{ borderStyle: 'dashed' }}>
+            <UserCheck size={14} /> Quick Add Supplier
+          </button>
+          <button className="btn btn-outline btn-sm" onClick={() => { setActiveGroup(null); setModal('group') }}>
+            <Plus size={14} /> Add New Group
+          </button>
+          <button className="btn btn-primary btn-sm" onClick={() => { setActiveLedger(null); setModal('ledger') }}>
+            <Plus size={14} /> Add Account Ledger
           </button>
         </div>
       </div>
@@ -164,41 +187,36 @@ export default function MastersPage() {
         </div>
       )}
 
-      {/* Group Modal (Create) */}
-      {modal === 'group' && (
+      {/* Group Modal (Create/Edit) */}
+      {(modal === 'group' || modal === 'edit-group') && (
         <GroupFormModal
           groups={groups}
-          onClose={() => setModal(null)}
-          onSaved={() => { setModal(null); loadData() }}
-        />
-      )}
-
-      {/* Group Modal (Edit) */}
-      {modal === 'edit-group' && activeGroup && (
-        <GroupFormModal
-          groups={groups}
-          groupToEdit={activeGroup}
+          companyId={currentCompanyId}
+          groupToEdit={activeGroup || undefined}
           onClose={() => { setModal(null); setActiveGroup(null) }}
           onSaved={() => { setModal(null); setActiveGroup(null); loadData() }}
         />
       )}
 
-      {/* Ledger Modal (Create) */}
-      {modal === 'ledger' && (
+      {/* Ledger Modal (Create/Edit) */}
+      {(modal === 'ledger' || modal === 'edit-ledger') && (
         <LedgerFormModal
           groups={groups}
-          onClose={() => setModal(null)}
-          onSaved={() => { setModal(null); loadData() }}
+          companyId={currentCompanyId}
+          ledgerToEdit={activeLedger || undefined}
+          onClose={() => { setModal(null); setActiveLedger(null) }}
+          onSaved={() => { setModal(null); setActiveLedger(null); loadData() }}
         />
       )}
 
-      {/* Ledger Modal (Edit) */}
-      {modal === 'edit-ledger' && activeLedger && (
-        <LedgerFormModal
+      {/* Quick Add Customer/Supplier Modal */}
+      {(modal === 'customer' || modal === 'supplier') && (
+        <QuickPartyModal
+          type={modal}
           groups={groups}
-          ledgerToEdit={activeLedger}
-          onClose={() => { setModal(null); setActiveLedger(null) }}
-          onSaved={() => { setModal(null); setActiveLedger(null); loadData() }}
+          companyId={currentCompanyId}
+          onClose={() => setModal(null)}
+          onSaved={() => { setModal(null); loadData() }}
         />
       )}
     </div>
@@ -223,11 +241,10 @@ function GroupNode({
 }) {
   const children = childGroups(group.id)
   const ledgers  = groupLedgers(group.id)
-  const isOpen   = expanded[group.id] !== false // open by default
+  const isOpen   = expanded[group.id] !== false
   const hasItems = children.length > 0 || ledgers.length > 0
 
   if (depth === 0) {
-    // Root level cards
     return (
       <div className="tree-group-card" style={{ marginBottom: '1.25rem' }}>
         <div className="tree-group-card-header" onClick={() => toggleExpand(group.id)}>
@@ -284,10 +301,16 @@ function GroupNode({
                 {ledgers.map(ledger => (
                   <div key={ledger.id} className="tree-ledger-item">
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <strong style={{ color: 'var(--color-gold-dark)', fontSize: '0.8rem' }}>
+                        [{ledger.account_code}]
+                      </strong>
                       <span style={{ fontSize: '0.9rem', fontWeight: 500 }}>{ledger.name}</span>
+                      <span className="badge" style={{ backgroundColor: 'var(--color-surface-alt)', border: `1px solid ${CLASSIFICATION_COLOR[ledger.classification] || 'var(--color-border)'}`, color: CLASSIFICATION_COLOR[ledger.classification] || 'var(--color-text)', fontSize: '0.65rem', padding: '1px 6px' }}>
+                        {ledger.classification}
+                      </span>
                       {Number(ledger.opening_balance) > 0 && (
                         <span className="text-muted text-xs">
-                          (Start: {ledger.opening_type === 'Dr' ? '(+)' : '(-)'} {Number(ledger.opening_balance).toLocaleString()})
+                          (Start: {Number(ledger.opening_balance).toLocaleString('en-US', { minimumFractionDigits: 3 })} {ledger.opening_type})
                         </span>
                       )}
                     </div>
@@ -372,10 +395,16 @@ function GroupNode({
             <div key={ledger.id} className="tree-connector-line">
               <div className="tree-ledger-item">
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <strong style={{ color: 'var(--color-gold-dark)', fontSize: '0.75rem' }}>
+                    [{ledger.account_code}]
+                  </strong>
                   <span style={{ fontSize: '0.85rem' }}>{ledger.name}</span>
+                  <span className="badge" style={{ backgroundColor: 'var(--color-surface-alt)', border: `1px solid ${CLASSIFICATION_COLOR[ledger.classification]}`, color: CLASSIFICATION_COLOR[ledger.classification], fontSize: '0.65rem', padding: '1px 6px' }}>
+                    {ledger.classification}
+                  </span>
                   {Number(ledger.opening_balance) > 0 && (
                     <span className="text-muted text-xs">
-                      (Start: {ledger.opening_type === 'Dr' ? '(+)' : '(-)'} {Number(ledger.opening_balance).toLocaleString()})
+                      (Start: {Number(ledger.opening_balance).toLocaleString('en-US', { minimumFractionDigits: 3 })} {ledger.opening_type})
                     </span>
                   )}
                 </div>
@@ -409,12 +438,14 @@ function GroupNode({
 }
 
 // ---- Group Form Modal ----
-function GroupFormModal({ groups, groupToEdit, onClose, onSaved }: {
+function GroupFormModal({ groups, companyId, groupToEdit, onClose, onSaved }: {
   groups: Group[]
+  companyId: string
   groupToEdit?: Group
   onClose: () => void
   onSaved: () => void
 }) {
+  const [apiError, setApiError] = useState<string | null>(null)
   const { register, handleSubmit, formState: { errors, isSubmitting } } = useForm<GroupForm>({
     resolver: zodResolver(groupSchema),
     defaultValues: groupToEdit ? {
@@ -425,20 +456,34 @@ function GroupFormModal({ groups, groupToEdit, onClose, onSaved }: {
   })
 
   async function onSubmit(data: GroupForm) {
+    setApiError(null)
     const isEdit = !!groupToEdit
     const url = '/api/groups'
     const method = isEdit ? 'PUT' : 'POST'
-    const payload = isEdit ? { ...data, id: groupToEdit.id } : data
+    let payload: any = isEdit ? { ...data, id: groupToEdit.id, company_id: companyId } : { ...data, company_id: companyId }
 
-    const res = await fetch(url, {
-      method,
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
-    })
-    if (res.ok) onSaved()
+    if (!isEdit) {
+      const { data: { user } } = await supabase.auth.getUser()
+      if (user) payload.created_by = user.id
+    }
+
+    try {
+      const res = await fetch(url, {
+        method,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      })
+      if (res.ok) {
+        onSaved()
+      } else {
+        const errData = await res.json()
+        setApiError(errData.error || 'Failed to save group.')
+      }
+    } catch (e: any) {
+      setApiError(e.message || 'An error occurred.')
+    }
   }
 
-  // Prevent selecting self or own children as parent group
   const parentCandidates = groups.filter(g => !groupToEdit || g.id !== groupToEdit.id)
 
   return (
@@ -450,6 +495,12 @@ function GroupFormModal({ groups, groupToEdit, onClose, onSaved }: {
         </div>
         <form onSubmit={handleSubmit(onSubmit)}>
           <div className="modal-body">
+            {apiError && (
+              <div className="alert alert-danger" style={{ marginBottom: '1.25rem', fontSize: '0.85rem' }}>
+                <AlertCircle size={16} style={{ flexShrink: 0 }} />
+                <span>{apiError}</span>
+              </div>
+            )}
             <div className="form-group">
               <label className="form-label required">Folder / Category Name</label>
               <input className={`form-control ${errors.name ? 'error' : ''}`} {...register('name')} placeholder="e.g. Office Supplies" />
@@ -486,12 +537,14 @@ function GroupFormModal({ groups, groupToEdit, onClose, onSaved }: {
 }
 
 // ---- Ledger Form Modal ----
-function LedgerFormModal({ groups, ledgerToEdit, onClose, onSaved }: {
+function LedgerFormModal({ groups, companyId, ledgerToEdit, onClose, onSaved }: {
   groups: Group[]
+  companyId: string
   ledgerToEdit?: Ledger
   onClose: () => void
   onSaved: () => void
 }) {
+  const [apiError, setApiError] = useState<string | null>(null)
   const { register, handleSubmit, formState: { errors, isSubmitting } } = useForm<LedgerForm>({
     resolver: zodResolver(ledgerSchema) as any,
     defaultValues: ledgerToEdit ? {
@@ -500,21 +553,33 @@ function LedgerFormModal({ groups, ledgerToEdit, onClose, onSaved }: {
       opening_balance: ledgerToEdit.opening_balance,
       opening_type: ledgerToEdit.opening_type,
       description: ledgerToEdit.description || '',
-    } : { opening_balance: 0, opening_type: 'Dr' },
+      account_code: ledgerToEdit.account_code || '',
+      classification: ledgerToEdit.classification || 'Nominal',
+    } : { opening_balance: 0, opening_type: 'Dr', classification: 'Nominal' },
   })
 
   async function onSubmit(data: LedgerForm) {
+    setApiError(null)
     const isEdit = !!ledgerToEdit
     const url = '/api/ledgers'
     const method = isEdit ? 'PUT' : 'POST'
-    const payload = isEdit ? { ...data, id: ledgerToEdit.id } : data
+    const payload = isEdit ? { ...data, id: ledgerToEdit.id, company_id: companyId } : { ...data, company_id: companyId }
 
-    const res = await fetch(url, {
-      method,
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
-    })
-    if (res.ok) onSaved()
+    try {
+      const res = await fetch(url, {
+        method,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      })
+      if (res.ok) {
+        onSaved()
+      } else {
+        const errData = await res.json()
+        setApiError(errData.error || 'Failed to save ledger.')
+      }
+    } catch (e: any) {
+      setApiError(e.message || 'An error occurred.')
+    }
   }
 
   return (
@@ -525,42 +590,224 @@ function LedgerFormModal({ groups, ledgerToEdit, onClose, onSaved }: {
           <button className="modal-close" onClick={onClose}><X size={18} /></button>
         </div>
         <form onSubmit={handleSubmit(onSubmit)}>
-          <div className="modal-body">
-            <div className="form-group">
-              <label className="form-label required">Account Name</label>
-              <input className={`form-control ${errors.name ? 'error' : ''}`} {...register('name')} placeholder="e.g. Bank Muscat" />
-              {errors.name && <span className="form-error">{errors.name.message}</span>}
+          <div className="modal-body" style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+            {apiError && (
+              <div className="alert alert-danger" style={{ fontSize: '0.85rem' }}>
+                <AlertCircle size={16} style={{ flexShrink: 0 }} />
+                <span>{apiError}</span>
+              </div>
+            )}
+            <div className="form-grid form-grid-2">
+              <div className="form-group">
+                <label className="form-label required">Account Name</label>
+                <input className={`form-control ${errors.name ? 'error' : ''}`} {...register('name')} placeholder="e.g. Bank Muscat" />
+                {errors.name && <span className="form-error">{errors.name.message}</span>}
+              </div>
+              <div className="form-group">
+                <label className="form-label">Account Code (Optional)</label>
+                <input className="form-control" {...register('account_code')} placeholder="Autogenerated if empty" />
+              </div>
             </div>
-            <div className="form-group">
-              <label className="form-label required">Under Group / Folder</label>
-              <select className={`form-control ${errors.group_id ? 'error' : ''}`} {...register('group_id')}>
-                <option value="">— Select Group —</option>
-                {groups.map(g => <option key={g.id} value={g.id}>{g.name}</option>)}
-              </select>
-              {errors.group_id && <span className="form-error">{errors.group_id.message}</span>}
+            <div className="form-grid form-grid-2">
+              <div className="form-group">
+                <label className="form-label required">Under Group / Folder</label>
+                <select className={`form-control ${errors.group_id ? 'error' : ''}`} {...register('group_id')}>
+                  <option value="">— Select Group —</option>
+                  {groups.map(g => <option key={g.id} value={g.id}>{g.name}</option>)}
+                </select>
+                {errors.group_id && <span className="form-error">{errors.group_id.message}</span>}
+              </div>
+              <div className="form-group">
+                <label className="form-label required">Classification</label>
+                <select className="form-control" {...register('classification')}>
+                  <option value="Personal">Personal (Customer, Supplier, Bank, Capital)</option>
+                  <option value="Real">Real (Cash, Stock, Fixed Assets)</option>
+                  <option value="Nominal">Nominal (Incomes & Expenses)</option>
+                </select>
+              </div>
             </div>
             <div className="form-grid form-grid-2">
               <div className="form-group">
                 <label className="form-label">Starting Balance</label>
-                <input type="number" step="0.01" className="form-control" {...register('opening_balance')} />
+                <input type="number" step="0.001" className="form-control" placeholder="0.000" {...register('opening_balance')} />
               </div>
               <div className="form-group">
-                <label className="form-label">Starting Balance Value</label>
+                <label className="form-label">Starting Balance Type</label>
                 <select className="form-control" {...register('opening_type')}>
-                  <option value="Dr">Positive Balance (+)</option>
-                  <option value="Cr">Due / Owing (-) </option>
+                  <option value="Dr">Debit (Dr) — Positive asset / expense balance</option>
+                  <option value="Cr">Credit (Cr) — Owing liability / income / equity balance</option>
                 </select>
               </div>
             </div>
             <div className="form-group">
               <label className="form-label">Description (optional)</label>
-              <textarea className="form-control" {...register('description')} placeholder="Add descriptive notes..." />
+              <textarea className="form-control" {...register('description')} placeholder="Add descriptive notes..." style={{ height: 60, paddingTop: 8 }} />
             </div>
           </div>
           <div className="modal-footer">
             <button type="button" className="btn btn-outline" onClick={onClose}>Cancel</button>
             <button type="submit" className="btn btn-primary" disabled={isSubmitting}>
               {isSubmitting ? 'Saving...' : 'Save Settings'}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  )
+}
+
+// ---- Quick Add Customer / Supplier Modal ----
+function QuickPartyModal({ type, groups, companyId, onClose, onSaved }: {
+  type: 'customer' | 'supplier'
+  groups: Group[]
+  companyId: string
+  onClose: () => void
+  onSaved: () => void
+}) {
+  const [name, setName] = useState('')
+  const [balance, setBalance] = useState(0)
+  const [desc, setDesc] = useState('')
+  const [error, setError] = useState<string | null>(null)
+  const [loading, setLoading] = useState(false)
+
+  async function handleQuickSave(e: React.FormEvent) {
+    e.preventDefault()
+    if (!name.trim()) {
+      setError('Name is required.')
+      return
+    }
+
+    setLoading(true)
+    setError(null)
+
+    try {
+      // 1. Resolve or Create Sub-Group
+      // For Customer: Assets > Sundry Debtors
+      // For Supplier: Liabilities > Sundry Creditors
+      let targetGroupName = type === 'customer' ? 'Sundry Debtors' : 'Sundry Creditors'
+      let targetGroupNature = type === 'customer' ? ('ASSET' as Nature) : ('LIABILITY' as Nature)
+      
+      let matchedGroup = groups.find(
+        g => g.name.toLowerCase().includes(targetGroupName.toLowerCase()) && g.nature === targetGroupNature
+      )
+
+      let groupId = matchedGroup?.id
+
+      if (!groupId) {
+        // If not found, create parent group under Current Assets/Liabilities or as Root group
+        let parentGroup = groups.find(
+          g => g.name.toLowerCase().includes(type === 'customer' ? 'current asset' : 'current liability')
+        )
+        
+        const grpRes = await fetch('/api/groups', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            name: targetGroupName,
+            nature: targetGroupNature,
+            parent_id: parentGroup ? parentGroup.id : null,
+            company_id: companyId,
+          }),
+        })
+
+        if (!grpRes.ok) {
+          const errData = await grpRes.json()
+          throw new Error(errData.error || 'Failed to auto-create parent sub-group.')
+        }
+
+        const newGrp = await grpRes.json()
+        groupId = newGrp.id
+      }
+
+      // 2. Insert the customer / supplier ledger account under the group
+      const res = await fetch('/api/ledgers', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: name.trim(),
+          group_id: groupId,
+          opening_balance: balance,
+          opening_type: type === 'customer' ? 'Dr' : 'Cr',
+          classification: 'Personal',
+          description: desc.trim() || `${type === 'customer' ? 'Customer' : 'Supplier'} ledger`,
+          company_id: companyId,
+        }),
+      })
+
+      if (res.ok) {
+        onSaved()
+      } else {
+        const errData = await res.json()
+        setError(errData.error || 'Failed to create ledger.')
+      }
+
+    } catch (err: any) {
+      setError(err.message || 'An error occurred during quick setup.')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal" onClick={e => e.stopPropagation()}>
+        <div className="modal-header">
+          <span className="modal-title">
+            Quick Add {type === 'customer' ? 'Customer' : 'Supplier'} Ledger
+          </span>
+          <button className="modal-close" onClick={onClose}><X size={18} /></button>
+        </div>
+        <form onSubmit={handleQuickSave}>
+          <div className="modal-body" style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+            {error && (
+              <div className="alert alert-danger" style={{ fontSize: '0.85rem' }}>
+                <AlertCircle size={16} />
+                <span>{error}</span>
+              </div>
+            )}
+            <div style={{ fontSize: '0.8rem', color: 'var(--color-text-secondary)', padding: '0.75rem 1rem', background: 'var(--color-teal-pale)', border: '1px solid var(--color-teal-muted)', borderRadius: 'var(--radius-md)' }}>
+              This will automatically create a <strong>Personal</strong> ledger account under: <br/>
+              <strong>{type === 'customer' ? 'Assets > Sundry Debtors' : 'Liabilities > Sundry Creditors'}</strong>
+            </div>
+
+            <div className="form-group">
+              <label className="form-label required">Name</label>
+              <input
+                className="form-control"
+                placeholder={type === 'customer' ? 'ABC Trading' : 'XYZ LLC'}
+                value={name}
+                onChange={e => setName(e.target.value)}
+                required
+              />
+            </div>
+
+            <div className="form-group">
+              <label className="form-label">Opening balance (OMR)</label>
+              <input
+                type="number"
+                step="0.001"
+                className="form-control"
+                placeholder="0.000"
+                value={balance}
+                onChange={e => setBalance(Number(e.target.value))}
+              />
+            </div>
+
+            <div className="form-group">
+              <label className="form-label">Description (Optional)</label>
+              <textarea
+                className="form-control"
+                placeholder="Address, phone, or other registry notes..."
+                value={desc}
+                onChange={e => setDesc(e.target.value)}
+                style={{ height: 60, paddingTop: 8 }}
+              />
+            </div>
+          </div>
+          <div className="modal-footer">
+            <button type="button" className="btn btn-outline" onClick={onClose}>Cancel</button>
+            <button type="submit" className="btn btn-primary" disabled={loading}>
+              {loading ? 'Creating...' : `Create ${type === 'customer' ? 'Customer' : 'Supplier'}`}
             </button>
           </div>
         </form>
