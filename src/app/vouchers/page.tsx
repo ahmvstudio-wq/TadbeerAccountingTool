@@ -10,6 +10,7 @@ const supabase = rawSupabase as any
 import type { Voucher, VoucherType, JournalLine } from '@/lib/types'
 import { ROLE_PERMISSIONS } from '@/lib/types'
 import { useUIStore } from '@/store/ui'
+import { PrintableVoucher } from '@/components/voucher/PrintableVoucher'
 
 const TYPE_LABELS: Record<VoucherType, string> = {
   PURCHASE: 'Purchase', SALE: 'Sale', RECEIPT: 'Receipt',
@@ -33,8 +34,9 @@ export default function VouchersPage() {
   
   // Selected voucher journal preview modal
   const [selectedVoucher, setSelectedVoucher] = useState<Voucher | null>(null)
-  const [journalLines, setJournalLines] = useState<(JournalLine & { ledger?: { name: string } })[]>([])
+  const [journalLines, setJournalLines] = useState<(JournalLine & { ledger?: { name: string; account_code: string; classification: string } })[]>([])
   const [loadingJournal, setLoadingJournal] = useState(false)
+  const [companySettings, setCompanySettings] = useState<any>(null)
 
   // Deletion modal state
   const [deleteModalOpen, setDeleteModalOpen] = useState(false)
@@ -57,6 +59,18 @@ export default function VouchersPage() {
   }, [typeFilter, currentCompanyId])
 
   useEffect(() => { loadVouchers() }, [loadVouchers])
+
+  useEffect(() => {
+    async function loadSettings() {
+      const { data } = await supabase
+        .from('settings')
+        .select('*')
+        .eq('company_id', currentCompanyId)
+        .single()
+      setCompanySettings(data)
+    }
+    loadSettings()
+  }, [currentCompanyId])
 
   const openDeleteModal = (id: string) => {
     setVoucherToDelete(id)
@@ -94,7 +108,7 @@ export default function VouchersPage() {
       setLoadingJournal(true)
       const { data } = await supabase
         .from('journal_lines')
-        .select('*, ledger:ledgers(name)')
+        .select('*, ledger:ledgers(id, name, account_code, classification)')
         .eq('voucher_id', selectedVoucher.id)
       setJournalLines((data as any) ?? [])
       setLoadingJournal(false)
@@ -326,10 +340,18 @@ export default function VouchersPage() {
               </div>
             </div>
 
-            <div className="modal-footer">
+            <div className="modal-footer" style={{ display: 'flex', justifyContent: 'space-between', gap: '1rem', width: '100%' }}>
+              <button className="btn btn-primary" onClick={() => window.print()}>
+                Print Voucher
+              </button>
               <button className="btn btn-outline" onClick={() => setSelectedVoucher(null)}>Dismiss Audit</button>
             </div>
           </div>
+          <PrintableVoucher
+            voucher={selectedVoucher}
+            journalLines={journalLines as any}
+            companySettings={companySettings}
+          />
         </div>
       )}
 

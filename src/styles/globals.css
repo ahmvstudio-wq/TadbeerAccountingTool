@@ -792,3 +792,177 @@ tbody tr:hover { background: var(--color-surface-alt); }
   .topnav-action-btn span { display: none; }
   .topnav-action-btn { padding: 0 0.75rem; }
 }
+
+/* ============================================================
+   PRINT LAYOUT
+   ============================================================ */
+.printable-voucher {
+  display: none;
+}
+
+@media print {
+  body * {
+    visibility: hidden;
+  }
+  .printable-voucher, .printable-voucher * {
+    visibility: visible;
+  }
+  .printable-voucher {
+    display: block !important;
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100%;
+    background: #FFFFFF !important;
+    color: #1F2421 !important;
+    font-size: 11pt;
+    line-height: 1.4;
+    padding: 1.5rem !important;
+    box-shadow: none !important;
+  }
+  
+  .print-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    margin-bottom: 1.5rem;
+  }
+  .company-info {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+  }
+  .print-logo {
+    width: 50px;
+    height: 50px;
+    object-fit: contain;
+  }
+  .print-logo-fallback {
+    width: 50px;
+    height: 50px;
+    background: #163B40;
+    color: #FFFFFF;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.5rem;
+    font-weight: 800;
+  }
+  .print-company-name {
+    font-size: 1.35rem;
+    font-weight: 800;
+    color: #163B40;
+    margin-bottom: 2px;
+  }
+  .print-company-details {
+    font-size: 0.8rem;
+    color: #535C58;
+    margin: 0;
+  }
+  
+  .print-title-box {
+    text-align: right;
+  }
+  .print-voucher-title {
+    font-size: 1.5rem;
+    font-weight: 800;
+    color: #163B40;
+    margin-bottom: 0.5rem;
+    letter-spacing: -0.01em;
+  }
+  .print-meta-table {
+    margin-left: auto;
+    border-collapse: collapse;
+    font-size: 0.85rem;
+  }
+  .print-meta-table td {
+    padding: 2px 8px;
+    border: none !important;
+  }
+  
+  .print-divider {
+    border: 0;
+    border-top: 2px solid #163B40;
+    margin: 1.5rem 0;
+  }
+  
+  .print-party-section {
+    margin-bottom: 1.5rem;
+    font-size: 0.95rem;
+    background: #FAF9F5 !important;
+    padding: 0.75rem 1rem;
+    border-radius: 8px;
+    border: 1px solid #ECE7DC;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+  .print-party-row {
+    margin-bottom: 0.35rem;
+  }
+  .print-party-row:last-child {
+    margin-bottom: 0;
+  }
+  
+  .print-entries-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-bottom: 2rem;
+  }
+  .print-entries-table th {
+    background: #163B40 !important;
+    color: #FFFFFF !important;
+    padding: 8px 12px;
+    font-size: 0.85rem;
+    font-weight: 700;
+    text-align: left;
+    border: 1px solid #163B40;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+  .print-entries-table td {
+    padding: 8px 12px;
+    border: 1px solid #ECE7DC;
+    font-size: 0.85rem;
+  }
+  .print-ledger-name {
+    font-weight: 600;
+  }
+  .print-ledger-type {
+    font-size: 0.75rem;
+    color: #535C58;
+  }
+  
+  .print-total-row td {
+    background: #FAF9F5 !important;
+    border-top: 2px solid #163B40;
+    border-bottom: 2px solid #163B40;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+  
+  .print-notes-section {
+    margin-bottom: 3rem;
+    font-size: 0.85rem;
+    border-left: 3px solid #D4AF37;
+    padding-left: 0.75rem;
+  }
+  
+  .print-signature-section {
+    display: flex;
+    justify-content: space-between;
+    margin-top: 4rem;
+    gap: 1.5rem;
+  }
+  .print-signature-box {
+    flex: 1;
+    text-align: center;
+    font-size: 0.8rem;
+    color: #535C58;
+  }
+  .print-signature-line {
+    border-bottom: 1px solid #8F9994;
+    margin-bottom: 0.5rem;
+    width: 100%;
+  }
+}

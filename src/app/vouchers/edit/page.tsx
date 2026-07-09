@@ -4,8 +4,9 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import { useForm, Controller } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
-import { ArrowLeft, AlertCircle, BookOpen, Info } from 'lucide-react'
+import { ArrowLeft, AlertCircle, BookOpen, Info, CheckCircle, Printer } from 'lucide-react'
 import Link from 'next/link'
+import { PrintableVoucher } from '@/components/voucher/PrintableVoucher'
 import { supabase as rawSupabase } from '@/lib/supabase/client'
 const supabase = rawSupabase as any
 import type { Ledger, VoucherType, Nature, Voucher } from '@/lib/types'
@@ -135,6 +136,12 @@ function EditVoucherForm() {
   // Real-time account balances mapping
   const [balances, setBalances] = useState<Record<string, { balance: number; type: 'Dr' | 'Cr' }>>({})
 
+  const [createdVoucher, setCreatedVoucher] = useState<any>(null)
+  const [createdVoucherLines, setCreatedVoucherLines] = useState<any[]>([])
+  const [companySettings, setCompanySettings] = useState<any>(null)
+  const [showSuccessModal, setShowSuccessModal] = useState(false)
+  const [loadingPrintDetails, setLoadingPrintDetails] = useState(false)
+
   const config = VOUCHER_CONFIG[voucherType] ?? VOUCHER_CONFIG.PURCHASE
 
   const { handleSubmit, watch, setValue, control, formState: { errors, isSubmitting } } = useForm<FormValues>({
@@ -251,7 +258,30 @@ function EditVoucherForm() {
         setSubmitError(err.error ?? 'Failed to update voucher.')
         return
       }
-      router.push('/vouchers')
+      const newVoucher = await res.json()
+      setCreatedVoucher(newVoucher)
+      setShowSuccessModal(true)
+
+      setLoadingPrintDetails(true)
+      try {
+        const [{ data: lines }, { data: settings }] = await Promise.all([
+          supabase
+            .from('journal_lines')
+            .select('*, ledger:ledgers(id, name, account_code, classification)')
+            .eq('voucher_id', newVoucher.id),
+          supabase
+            .from('settings')
+            .select('*')
+            .eq('company_id', currentCompanyId)
+            .single()
+        ])
+        setCreatedVoucherLines(lines || [])
+        setCompanySettings(settings)
+      } catch (err) {
+        console.error('Failed to load printing details:', err)
+      } finally {
+        setLoadingPrintDetails(false)
+      }
     } catch {
       setSubmitError('Network error. Please try again.')
     }
@@ -620,6 +650,56 @@ function EditVoucherForm() {
 
         </div>
       </div>
+
+      {showSuccessModal && createdVoucher && (
+        <div className="modal-overlay">
+          <div className="modal" style={{ maxWidth: '480px', border: '1px solid var(--color-border)' }}>
+            <div className="modal-header">
+              <span className="modal-title" style={{ color: 'var(--color-success)', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <CheckCircle size={18} />
+                <span>Voucher Updated Successfully</span>
+              </span>
+            </div>
+            <div className="modal-body" style={{ display: 'flex', flexDirection: 'column', gap: '1rem', textAlign: 'center', padding: '2rem 1.5rem' }}>
+              <div style={{ fontSize: '1.5rem', fontWeight: 800, color: 'var(--color-teal)' }}>
+                {createdVoucher.voucher_number}
+              </div>
+              <p style={{ fontSize: '0.9rem', color: 'var(--color-text-secondary)', margin: 0 }}>
+                The double-entry general ledger logs have been generated and updated for this transaction.
+              </p>
+              {loadingPrintDetails && (
+                <p style={{ fontSize: '0.8rem', color: 'var(--color-text-muted)', margin: 0 }}>Loading printing details...</p>
+              )}
+            </div>
+            <div className="modal-footer" style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', width: '100%' }}>
+              <button
+                type="button"
+                className="btn btn-primary"
+                style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem' }}
+                disabled={loadingPrintDetails}
+                onClick={() => window.print()}
+              >
+                <Printer size={16} /> Print Voucher / Invoice
+              </button>
+              <button
+                type="button"
+                className="btn btn-outline"
+                style={{ width: '100%' }}
+                onClick={() => router.push('/vouchers')}
+              >
+                Go to Registry
+              </button>
+            </div>
+          </div>
+          {!loadingPrintDetails && (
+            <PrintableVoucher
+              voucher={createdVoucher}
+              journalLines={createdVoucherLines}
+              companySettings={companySettings}
+            />
+          )}
+        </div>
+      )}
     </div>
   )
 }
