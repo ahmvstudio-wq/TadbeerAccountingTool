@@ -66,13 +66,11 @@ export function PrintableVoucher({ voucher, journalLines, voucherLines = [], com
             {companySettings?.address || 'Muscat, Sultanate of Oman'}
           </p>
           <p style={{ margin: '0 0 2px', fontSize: '0.8rem', color: 'var(--color-text-secondary)' }}>
-            {companySettings?.phone ? `Phone: ${companySettings.phone}` : ''}
-            {companySettings?.phone && companySettings?.email ? ' | ' : ''}
-            {companySettings?.email ? `Email: ${companySettings.email}` : ''}
+            Phone: {companySettings?.phone || '+968 7630 7656'} | Email: {companySettings?.email || 'operation@tadbeertt.com'}
           </p>
-          {companySettings?.vat_number && (
+          {(companySettings?.vat_number || 'OM100000000') && (
             <p style={{ margin: '4px 0 0', fontSize: '0.8rem', fontWeight: 600, color: 'var(--color-teal)' }}>
-              <strong>VAT No:</strong> {companySettings.vat_number}
+              <strong>VAT No:</strong> {companySettings?.vat_number || 'OM100000000'}
             </p>
           )}
         </div>
@@ -80,9 +78,9 @@ export function PrintableVoucher({ voucher, journalLines, voucherLines = [], com
         {/* Right Side: Logo & Invoice Block */}
         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '0.5rem' }}>
           {companySettings?.logo_url ? (
-            <img src={companySettings.logo_url} alt="Logo" style={{ width: 90, height: 90, objectFit: 'contain' }} />
+            <img src={companySettings.logo_url} alt="Logo" style={{ width: 140, height: 140, objectFit: 'contain' }} />
           ) : (
-            <img src="/Logo .png" alt="Logo" style={{ width: 90, height: 90, objectFit: 'contain', background: 'transparent' }} />
+            <img src="/Logo .png" alt="Logo" style={{ width: 140, height: 140, objectFit: 'contain', background: 'transparent' }} />
           )}
           
           <div style={{ textAlign: 'right', marginTop: '0.25rem' }}>

@@ -252,9 +252,48 @@ export default function SalesVoucherPage() {
     if (!postedVoucher) return
     const customerLedger = ledgers.find(l => l.name === postedVoucher.party_name)
     const emailTo = customerLedger?.email || ''
-    const subject = encodeURIComponent(`Tax Invoice ${postedVoucher.voucher_number} from ${companySettings?.company_name || 'Tadbeer Entity'}`)
-    const body = encodeURIComponent(`Dear Customer,\n\nPlease find attached Tax Invoice ${postedVoucher.voucher_number} for OMR ${postedVoucher.grand_total}.\n\nThank you for your business.`)
-    window.location.href = `mailto:${emailTo}?subject=${subject}&body=${body}`
+    
+    const linesStr = postedVoucherLines.map((l, idx) => 
+      `${idx + 1}. ${l.description} - OMR ${Number(l.amount).toFixed(3)} (VAT ${Number(l.vat_rate)}%)`
+    ).join('\n');
+
+    const emailBody = `Dear ${postedVoucher.party_name || 'Customer'},\n\n` +
+      `Assalamu Alaikum,\n\n` +
+      `Here is the digital invoice summary from Tadbeer Transformations for your records:\n\n` +
+      `--------------------------------------------------\n` +
+      `INVOICE DETAILS\n` +
+      `--------------------------------------------------\n` +
+      `TAX INVOICE: ${postedVoucher.voucher_number}\n` +
+      `Date: ${new Date(postedVoucher.date).toLocaleDateString('en-GB')}\n` +
+      `Narration: ${postedVoucher.narration || 'Services rendered'}\n` +
+      `--------------------------------------------------\n\n` +
+      `SERVICES RENDERED:\n` +
+      `${linesStr}\n\n` +
+      `--------------------------------------------------\n` +
+      `Subtotal: OMR ${Number(postedVoucher.subtotal).toFixed(3)}\n` +
+      `VAT (5%): OMR ${Number(postedVoucher.vat_total).toFixed(3)}\n` +
+      `Grand Total: OMR ${Number(postedVoucher.grand_total).toFixed(3)}\n` +
+      `--------------------------------------------------\n\n` +
+      `Terms / Notes:\n` +
+      `${postedVoucher.notes || 'Please cite invoice number in all wire transfers. Bank payments are subject to a 30-day corporate credit term.'}\n\n` +
+      `Please let us know if you have any questions.\n\n` +
+      `Thank you for your business!\n\n` +
+      `Tadbeer Transformations\n` +
+      `Email: operation@tadbeertt.com\n` +
+      `Phone: +968 7630 7656`;
+
+    const subject = encodeURIComponent(`Tax Invoice ${postedVoucher.voucher_number} — Tadbeer Transformations`);
+    const body = encodeURIComponent(emailBody);
+    
+    // Direct Gmail Compose Window link
+    const gmailUrl = `https://mail.google.com/mail/?view=cm&fs=1&to=${emailTo}&su=${subject}&body=${body}`;
+    
+    // Open in a new tab (or fallback to mailto)
+    try {
+      window.open(gmailUrl, '_blank');
+    } catch {
+      window.location.href = `mailto:${emailTo}?subject=${subject}&body=${body}`;
+    }
   }
 
   function startNewInvoice() {
