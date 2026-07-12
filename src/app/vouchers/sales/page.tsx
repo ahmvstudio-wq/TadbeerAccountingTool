@@ -248,10 +248,44 @@ export default function SalesVoucherPage() {
     win.print()
   }
 
-  function handleEmail() {
+  async function handleEmail() {
     if (!postedVoucher) return
     const customerLedger = ledgers.find(l => l.name === postedVoucher.party_name)
     const emailTo = customerLedger?.email || ''
+
+    setSuccess('Generating PDF Invoice and loading Gmail client...')
+
+    // 1. Load html2pdf from CDN dynamically
+    const loadHtml2Pdf = () => {
+      return new Promise((resolve) => {
+        if ((window as any).html2pdf) {
+          resolve((window as any).html2pdf)
+          return
+        }
+        const script = document.createElement('script')
+        script.src = 'https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js'
+        script.onload = () => resolve((window as any).html2pdf)
+        document.head.appendChild(script)
+      })
+    }
+
+    try {
+      const html2pdf: any = await loadHtml2Pdf()
+      const element = document.getElementById('printable-voucher')
+      if (element) {
+        const opt = {
+          margin:       0.3,
+          filename:     `Invoice-${postedVoucher.voucher_number}.pdf`,
+          image:        { type: 'jpeg', quality: 0.98 },
+          html2canvas:  { scale: 2, useCORS: true },
+          jsPDF:        { unit: 'in', format: 'letter', orientation: 'portrait' }
+        }
+        // Save PDF locally to downloads folder
+        await html2pdf().set(opt).from(element).save()
+      }
+    } catch (pdfErr) {
+      console.error('Failed to generate PDF download:', pdfErr)
+    }
     
     const linesStr = postedVoucherLines.map((l, idx) => 
       `${idx + 1}. ${l.description} - OMR ${Number(l.amount).toFixed(3)} (VAT ${Number(l.vat_rate)}%)`
@@ -259,13 +293,12 @@ export default function SalesVoucherPage() {
 
     const emailBody = `Dear ${postedVoucher.party_name || 'Customer'},\n\n` +
       `Assalamu Alaikum,\n\n` +
-      `Here is the digital invoice summary from Tadbeer Transformations for your records:\n\n` +
+      `Please find attached our official Tax Invoice ${postedVoucher.voucher_number} for OMR ${postedVoucher.grand_total.toFixed(3)} (attached as Invoice-${postedVoucher.voucher_number}.pdf from Downloads).\n\n` +
       `--------------------------------------------------\n` +
-      `INVOICE DETAILS\n` +
+      `SUMMARY DETAILS\n` +
       `--------------------------------------------------\n` +
       `TAX INVOICE: ${postedVoucher.voucher_number}\n` +
       `Date: ${new Date(postedVoucher.date).toLocaleDateString('en-GB')}\n` +
-      `Narration: ${postedVoucher.narration || 'Services rendered'}\n` +
       `--------------------------------------------------\n\n` +
       `SERVICES RENDERED:\n` +
       `${linesStr}\n\n` +
@@ -288,6 +321,8 @@ export default function SalesVoucherPage() {
     // Direct Gmail Compose Window link
     const gmailUrl = `https://mail.google.com/mail/?view=cm&fs=1&to=${emailTo}&su=${subject}&body=${body}`;
     
+    setSuccess(`Invoice posted & PDF downloaded successfully! Please attach the downloaded 'Invoice-${postedVoucher.voucher_number}.pdf' to the pre-filled Gmail window.`);
+
     // Open in a new tab (or fallback to mailto)
     try {
       window.open(gmailUrl, '_blank');
