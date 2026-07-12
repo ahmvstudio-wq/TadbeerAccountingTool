@@ -155,11 +155,11 @@ export function PrintableVoucher({ voucher, journalLines, voucherLines = [], com
         <table style={{ width: '100%', borderCollapse: 'collapse', marginBottom: '1.5rem', fontSize: '0.85rem' }}>
           <thead>
             <tr style={{ background: '#163B40', color: '#FFFFFF', textTransform: 'uppercase', fontSize: '0.75rem', fontWeight: 700 }}>
-              <th style={{ padding: '8px 12px', border: '1px solid #E2E8F0', textAlign: 'left', width: '15%' }}>Code</th>
-              <th style={{ padding: '8px 12px', border: '1px solid #E2E8F0', textAlign: 'left', width: '45%' }}>Service Description</th>
-              <th style={{ padding: '8px 12px', border: '1px solid #E2E8F0', textAlign: 'center', width: '8%' }}>Qty</th>
-              <th style={{ padding: '8px 12px', border: '1px solid #E2E8F0', textAlign: 'right', width: '14%' }}>Unit Rate</th>
-              <th style={{ padding: '8px 12px', border: '1px solid #E2E8F0', textAlign: 'right', width: '18%' }}>Total Amount</th>
+              <th style={{ padding: '8px 12px', border: '1px solid #E2E8F0', textAlign: 'left', width: '15%', color: '#FFFFFF' }}>Code</th>
+              <th style={{ padding: '8px 12px', border: '1px solid #E2E8F0', textAlign: 'left', width: '45%', color: '#FFFFFF' }}>Service Description</th>
+              <th style={{ padding: '8px 12px', border: '1px solid #E2E8F0', textAlign: 'center', width: '8%', color: '#FFFFFF' }}>Qty</th>
+              <th style={{ padding: '8px 12px', border: '1px solid #E2E8F0', textAlign: 'right', width: '14%', color: '#FFFFFF' }}>Unit Rate</th>
+              <th style={{ padding: '8px 12px', border: '1px solid #E2E8F0', textAlign: 'right', width: '18%', color: '#FFFFFF' }}>Total Amount</th>
             </tr>
           </thead>
           <tbody>
@@ -190,10 +190,10 @@ export function PrintableVoucher({ voucher, journalLines, voucherLines = [], com
         <table style={{ width: '100%', borderCollapse: 'collapse', marginBottom: '1.5rem', fontSize: '0.85rem' }}>
           <thead>
             <tr style={{ background: '#163B40', color: '#FFFFFF', textTransform: 'uppercase', fontSize: '0.75rem', fontWeight: 700 }}>
-              <th style={{ padding: '8px 12px', border: '1px solid #E2E8F0', textAlign: 'left', width: '15%' }}>Code</th>
-              <th style={{ padding: '8px 12px', border: '1px solid #E2E8F0', textAlign: 'left', width: '45%' }}>Account Mapped</th>
-              <th style={{ padding: '8px 12px', border: '1px solid #E2E8F0', textAlign: 'right', width: '20%' }}>Debit ({voucher.currency})</th>
-              <th style={{ padding: '8px 12px', border: '1px solid #E2E8F0', textAlign: 'right', width: '20%' }}>Credit ({voucher.currency})</th>
+              <th style={{ padding: '8px 12px', border: '1px solid #E2E8F0', textAlign: 'left', width: '15%', color: '#FFFFFF' }}>Code</th>
+              <th style={{ padding: '8px 12px', border: '1px solid #E2E8F0', textAlign: 'left', width: '45%', color: '#FFFFFF' }}>Account Mapped</th>
+              <th style={{ padding: '8px 12px', border: '1px solid #E2E8F0', textAlign: 'right', width: '20%', color: '#FFFFFF' }}>Debit ({voucher.currency})</th>
+              <th style={{ padding: '8px 12px', border: '1px solid #E2E8F0', textAlign: 'right', width: '20%', color: '#FFFFFF' }}>Credit ({voucher.currency})</th>
             </tr>
           </thead>
           <tbody>
@@ -260,8 +260,8 @@ export function PrintableVoucher({ voucher, journalLines, voucherLines = [], com
                 </tr>
               )}
               <tr style={{ background: '#163B40', color: '#FFFFFF', fontWeight: 700, fontSize: '1rem' }}>
-                <td style={{ padding: '8px', border: '1px solid #163B40' }}>Grand Total</td>
-                <td style={{ padding: '8px', border: '1px solid #163B40', textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>
+                <td style={{ padding: '8px', border: '1px solid #163B40', color: '#FFFFFF' }}>Grand Total</td>
+                <td style={{ padding: '8px', border: '1px solid #163B40', textAlign: 'right', fontVariantNumeric: 'tabular-nums', color: '#FFFFFF' }}>
                   OMR {grandTotal.toLocaleString('en-US', { minimumFractionDigits: 2 })}
                 </td>
               </tr>
