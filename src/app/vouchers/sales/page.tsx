@@ -289,7 +289,7 @@ export default function SalesVoucherPage() {
     
     const emailBody = `Dear ${postedVoucher.party_name || 'Customer'},\n\n` +
       `Hope you are doing well.\n\n` +
-      `Please find attached Tax Invoice ${postedVoucher.voucher_number} from Tadbeer Transformations (attached as Invoice-${postedVoucher.voucher_number}.pdf from Downloads).\n\n` +
+      `Please find attached Tax Invoice ${postedVoucher.voucher_number} from Tadbeer Transformations.\n\n` +
       `Please let us know if you have any questions.\n\n` +
       `Thank you!\n\n` +
       `Tadbeer Transformations\n` +

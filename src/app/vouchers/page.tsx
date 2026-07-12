@@ -183,7 +183,7 @@ export default function VouchersPage() {
     const label = vType === 'SALE' ? 'Tax Invoice' : 'Voucher'
     const emailBody = `Dear Customer / Supplier,\n\n` +
       `Hope you are doing well.\n\n` +
-      `Please find attached ${label} ${vNumber} from Tadbeer Transformations (attached as Voucher-${vNumber}.pdf from Downloads).\n\n` +
+      `Please find attached ${label} ${vNumber} from Tadbeer Transformations.\n\n` +
       `Please let us know if you have any questions.\n\n` +
       `Thank you!\n\n` +
       `Tadbeer Transformations\n` +
