@@ -287,30 +287,11 @@ export default function SalesVoucherPage() {
       console.error('Failed to generate PDF download:', pdfErr)
     }
     
-    const linesStr = postedVoucherLines.map((l, idx) => 
-      `${idx + 1}. ${l.description} - OMR ${Number(l.amount).toFixed(3)} (VAT ${Number(l.vat_rate)}%)`
-    ).join('\n');
-
     const emailBody = `Dear ${postedVoucher.party_name || 'Customer'},\n\n` +
-      `Assalamu Alaikum,\n\n` +
-      `Please find attached our official Tax Invoice ${postedVoucher.voucher_number} for OMR ${postedVoucher.grand_total.toFixed(3)} (attached as Invoice-${postedVoucher.voucher_number}.pdf from Downloads).\n\n` +
-      `--------------------------------------------------\n` +
-      `SUMMARY DETAILS\n` +
-      `--------------------------------------------------\n` +
-      `TAX INVOICE: ${postedVoucher.voucher_number}\n` +
-      `Date: ${new Date(postedVoucher.date).toLocaleDateString('en-GB')}\n` +
-      `--------------------------------------------------\n\n` +
-      `SERVICES RENDERED:\n` +
-      `${linesStr}\n\n` +
-      `--------------------------------------------------\n` +
-      `Subtotal: OMR ${Number(postedVoucher.subtotal).toFixed(3)}\n` +
-      `VAT (5%): OMR ${Number(postedVoucher.vat_total).toFixed(3)}\n` +
-      `Grand Total: OMR ${Number(postedVoucher.grand_total).toFixed(3)}\n` +
-      `--------------------------------------------------\n\n` +
-      `Terms / Notes:\n` +
-      `${postedVoucher.notes || 'Please cite invoice number in all wire transfers. Bank payments are subject to a 30-day corporate credit term.'}\n\n` +
+      `Hope you are doing well.\n\n` +
+      `Please find attached Tax Invoice ${postedVoucher.voucher_number} from Tadbeer Transformations (attached as Invoice-${postedVoucher.voucher_number}.pdf from Downloads).\n\n` +
       `Please let us know if you have any questions.\n\n` +
-      `Thank you for your business!\n\n` +
+      `Thank you!\n\n` +
       `Tadbeer Transformations\n` +
       `Email: operation@tadbeertt.com\n` +
       `Phone: +968 7630 7656`;

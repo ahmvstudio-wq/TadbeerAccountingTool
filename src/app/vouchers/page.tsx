@@ -1,6 +1,6 @@
 'use client'
 import { useEffect, useState, useCallback } from 'react'
-import { Search, Eye, Trash2, AlertCircle, Printer, X } from 'lucide-react'
+import { Search, Eye, Trash2, AlertCircle, Printer, X, Mail } from 'lucide-react'
 import { supabase as rawSupabase } from '@/lib/supabase/client'
 const supabase = rawSupabase as any
 import type { Voucher, VoucherType, JournalLine } from '@/lib/types'
@@ -143,6 +143,64 @@ export default function VouchersPage() {
     win.print()
   }
 
+  async function handleEmail() {
+    if (!selectedVoucher) return
+    const emailTo = partyLedger?.email || ''
+    const vNumber = selectedVoucher.voucher_number
+    const vType = selectedVoucher.type
+
+    // 1. Load html2pdf dynamically from CDN
+    const loadHtml2Pdf = () => {
+      return new Promise((resolve) => {
+        if ((window as any).html2pdf) {
+          resolve((window as any).html2pdf)
+          return
+        }
+        const script = document.createElement('script')
+        script.src = 'https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js'
+        script.onload = () => resolve((window as any).html2pdf)
+        document.head.appendChild(script)
+      })
+    }
+
+    try {
+      const html2pdf: any = await loadHtml2Pdf()
+      const element = document.getElementById('printable-voucher')
+      if (element) {
+        const opt = {
+          margin:       0.3,
+          filename:     `Voucher-${vNumber}.pdf`,
+          image:        { type: 'jpeg', quality: 0.98 },
+          html2canvas:  { scale: 2, useCORS: true },
+          jsPDF:        { unit: 'in', format: 'letter', orientation: 'portrait' }
+        }
+        await html2pdf().set(opt).from(element).save()
+      }
+    } catch (pdfErr) {
+      console.error('Failed to generate PDF download:', pdfErr)
+    }
+
+    const label = vType === 'SALE' ? 'Tax Invoice' : 'Voucher'
+    const emailBody = `Dear Customer / Supplier,\n\n` +
+      `Hope you are doing well.\n\n` +
+      `Please find attached ${label} ${vNumber} from Tadbeer Transformations (attached as Voucher-${vNumber}.pdf from Downloads).\n\n` +
+      `Please let us know if you have any questions.\n\n` +
+      `Thank you!\n\n` +
+      `Tadbeer Transformations\n` +
+      `Email: operation@tadbeertt.com\n` +
+      `Phone: +968 7630 7656`;
+
+    const subject = encodeURIComponent(`${label} ${vNumber} — Tadbeer Transformations`);
+    const body = encodeURIComponent(emailBody);
+    const gmailUrl = `https://mail.google.com/mail/?view=cm&fs=1&to=${emailTo}&su=${subject}&body=${body}`;
+
+    try {
+      window.open(gmailUrl, '_blank');
+    } catch {
+      window.location.href = `mailto:${emailTo}?subject=${subject}&body=${body}`;
+    }
+  }
+
   const filtered = vouchers.filter(v => {
     if (!search) return true
     const q = search.toLowerCase()
@@ -233,6 +291,7 @@ export default function VouchersPage() {
             <div className="modal-header">
               <h3>{selectedVoucher.voucher_number} — Journal Preview</h3>
               <div style={{ display: 'flex', gap: '0.5rem' }}>
+                <button className="btn btn-outline btn-sm" onClick={handleEmail} style={{ display: 'flex', alignItems: 'center', gap: 4 }}><Mail size={14} /> Email</button>
                 <button className="btn btn-outline btn-sm" onClick={handlePrint}><Printer size={14} /> Print</button>
                 <button className="btn btn-ghost btn-sm" onClick={() => setSelectedVoucher(null)}><X size={16} /></button>
               </div>
