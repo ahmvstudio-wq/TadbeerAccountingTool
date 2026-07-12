@@ -78,9 +78,9 @@ export function PrintableVoucher({ voucher, journalLines, voucherLines = [], com
         {/* Right Side: Logo & Invoice Block */}
         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '0.5rem' }}>
           {companySettings?.logo_url ? (
-            <img src={companySettings.logo_url} alt="Logo" style={{ width: 140, height: 140, objectFit: 'contain' }} />
+            <img src={companySettings.logo_url} alt="Logo" style={{ width: 160, height: 'auto', display: 'block', objectFit: 'contain' }} />
           ) : (
-            <img src="/Logo .png" alt="Logo" style={{ width: 140, height: 140, objectFit: 'contain', background: 'transparent' }} />
+            <img src="/Logo .png" alt="Logo" style={{ width: 160, height: 'auto', display: 'block', background: 'transparent' }} />
           )}
           
           <div style={{ textAlign: 'right', marginTop: '0.25rem' }}>
@@ -297,7 +297,7 @@ export function PrintableVoucher({ voucher, journalLines, voucherLines = [], com
 
       {/* Footer thank you */}
       <div style={{ marginTop: '2.5rem', textAlign: 'center', fontSize: '0.75rem', color: '#4A5568', borderTop: '1px dashed #E2E8F0', paddingTop: '1rem' }}>
-        <p style={{ margin: '0 0 4px' }}>If you have any questions about this invoice, please contact Billing Operations at billing@tadbeer.om</p>
+        <p style={{ margin: '0 0 4px' }}>Phone: +968 7630 7656 | Email: operation@tadbeertt.com</p>
         <p style={{ margin: 0, fontWeight: 700, fontStyle: 'italic', color: '#163B40' }}>Thank You For Your Business!</p>
       </div>
 

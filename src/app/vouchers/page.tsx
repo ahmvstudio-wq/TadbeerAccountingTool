@@ -34,6 +34,10 @@ export default function VouchersPage() {
   const [loadingJournal, setLoadingJournal] = useState(false)
   const [companySettings, setCompanySettings] = useState<any>(null)
 
+  // Attachment state
+  const [attachmentUrl, setAttachmentUrl] = useState<string | null>(null)
+  const [uploadingAttachment, setUploadingAttachment] = useState(false)
+
   // Delete modal
   const [deleteModalOpen, setDeleteModalOpen] = useState(false)
   const [voucherToDelete, setVoucherToDelete] = useState<string | null>(null)
@@ -68,8 +72,9 @@ export default function VouchersPage() {
     setSelectedVoucher(voucher)
     setLoadingJournal(true)
     setPartyLedger(null)
+    setAttachmentUrl((voucher as any).attachment_url || null)
     
-    const [{ data: jLines }, { data: vLines }, { data: pLedger }] = await Promise.all([
+    const [{ data: jLines }, { data: vLines }, { data: pLedger }, { data: vRow }] = await Promise.all([
       supabase
         .from('journal_lines')
         .select('*, ledger:ledgers(name, account_code, classification)')
@@ -83,13 +88,21 @@ export default function VouchersPage() {
         .from('ledgers')
         .select('name, phone, email, address, vat_number')
         .eq('id', voucher.party_ledger_id)
-        .maybeSingle() : Promise.resolve({ data: null })
+        .maybeSingle() : Promise.resolve({ data: null }),
+      supabase
+        .from('vouchers')
+        .select('attachment_url')
+        .eq('id', voucher.id)
+        .maybeSingle()
     ])
     
     setJournalLines(jLines ?? [])
     setVoucherLines(vLines ?? [])
     if (pLedger?.data) {
       setPartyLedger(pLedger.data)
+    }
+    if (vRow) {
+      setAttachmentUrl(vRow.attachment_url)
     }
     setLoadingJournal(false)
   }
@@ -296,17 +309,101 @@ export default function VouchersPage() {
                 <button className="btn btn-ghost btn-sm" onClick={() => setSelectedVoucher(null)}><X size={16} /></button>
               </div>
             </div>
-            <div className="modal-body">
+            <div className="modal-body" style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
               {loadingJournal ? (
                 <div style={{ padding: '2rem', textAlign: 'center' }}>Loading journal entries...</div>
               ) : (
-                <PrintableVoucher 
-                  voucher={selectedVoucher} 
-                  journalLines={journalLines} 
-                  voucherLines={voucherLines} 
-                  companySettings={companySettings} 
-                  partyLedger={partyLedger}
-                />
+                <>
+                  <PrintableVoucher 
+                    voucher={selectedVoucher} 
+                    journalLines={journalLines} 
+                    voucherLines={voucherLines} 
+                    companySettings={companySettings} 
+                    partyLedger={partyLedger}
+                  />
+
+                  {/* Attachment upload & display section */}
+                  <div style={{ borderTop: '1px dashed #E2E8F0', paddingTop: '1.5rem', marginTop: '1rem' }}>
+                    <h4 style={{ fontSize: '0.9rem', fontWeight: 700, color: '#163B40', marginBottom: '0.5rem' }}>
+                      Receipt Image / Document Attachment
+                    </h4>
+                    
+                    {attachmentUrl ? (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', alignItems: 'flex-start' }}>
+                        {attachmentUrl.startsWith('data:image/') ? (
+                          <div style={{ position: 'relative', border: '1px solid #E2E8F0', borderRadius: '8px', padding: '4px', background: '#F7FAFC' }}>
+                            {/* eslint-disable-next-line @next/next/no-img-element */}
+                            <img 
+                              src={attachmentUrl} 
+                              alt="Attachment Preview" 
+                              style={{ maxHeight: '240px', maxWidth: '100%', objectFit: 'contain', borderRadius: '6px', cursor: 'pointer' }}
+                              onClick={() => {
+                                const win = window.open();
+                                win?.document.write(`<img src="${attachmentUrl}" style="max-width:100%; height:auto;" />`);
+                              }}
+                            />
+                          </div>
+                        ) : (
+                          <a href={attachmentUrl} target="_blank" rel="noreferrer" className="btn btn-outline btn-sm">
+                            View Attached File
+                          </a>
+                        )}
+                        <button 
+                          className="btn btn-sm btn-outline" 
+                          style={{ borderColor: '#ef4444', color: '#ef4444' }}
+                          onClick={async () => {
+                            if (confirm('Are you sure you want to remove this attachment?')) {
+                              setUploadingAttachment(true)
+                              const { error } = await supabase
+                                .from('vouchers')
+                                .update({ attachment_url: null })
+                                .eq('id', selectedVoucher.id)
+                              if (!error) {
+                                setAttachmentUrl(null)
+                                setVouchers(prev => prev.map(v => v.id === selectedVoucher.id ? { ...v, attachment_url: null } : v))
+                              }
+                              setUploadingAttachment(false)
+                            }
+                          }}
+                        >
+                          Remove Attachment
+                        </button>
+                      </div>
+                    ) : (
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+                        <input 
+                          type="file" 
+                          accept="image/*,application/pdf"
+                          onChange={async (e) => {
+                            const file = e.target.files?.[0]
+                            if (!file) return
+                            setUploadingAttachment(true)
+                            
+                            const reader = new FileReader()
+                            reader.onloadend = async () => {
+                              const base64Data = reader.result as string
+                              const { error } = await supabase
+                                .from('vouchers')
+                                .update({ attachment_url: base64Data })
+                                .eq('id', selectedVoucher.id)
+                              if (!error) {
+                                setAttachmentUrl(base64Data)
+                                setVouchers(prev => prev.map(v => v.id === selectedVoucher.id ? { ...v, attachment_url: base64Data } : v))
+                              } else {
+                                alert('Failed to save attachment to database. Make sure column attachment_url is configured.')
+                              }
+                              setUploadingAttachment(false)
+                            }
+                            reader.readAsDataURL(file)
+                          }}
+                          disabled={uploadingAttachment}
+                          style={{ fontSize: '0.8rem' }}
+                        />
+                        {uploadingAttachment && <span style={{ fontSize: '0.8rem', color: '#718096' }}>Uploading...</span>}
+                      </div>
+                    )}
+                  </div>
+                </>
               )}
             </div>
           </div>
