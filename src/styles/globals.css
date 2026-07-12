@@ -221,7 +221,7 @@ input, textarea, select { font-family: inherit; font-size: inherit; outline: non
 .app-shell { min-height: 100vh; }
 
 .main-content {
-  margin-top: var(--topnav-height);
+  margin-top: 135px;
   padding: 3rem;
   max-width: 1440px;
   margin-left: auto;
@@ -711,6 +711,13 @@ tbody tr:hover { background: var(--color-surface-alt); }
   max-height: 90vh;
   display: flex; flex-direction: column;
   overflow: hidden;
+}
+.modal form {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  flex: 1;
+  max-height: 100%;
 }
 .modal-lg {
   max-width: 800px;

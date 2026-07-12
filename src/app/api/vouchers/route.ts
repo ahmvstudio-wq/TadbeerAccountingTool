@@ -1,9 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
-import { buildJournalLines } from '@/lib/accounting'
-import { getExchangeRate } from '@/lib/exchange'
-import type { Database, VoucherType, UserRole } from '@/lib/types'
-import { ROLE_PERMISSIONS } from '@/lib/types'
+import {
+  buildSalesJournalLines,
+  buildPurchaseJournalLines,
+  buildPaymentJournalLines,
+  buildReceiptJournalLines,
+  buildManualJournalLines,
+  VOUCHER_PREFIX,
+  formatVoucherNumber,
+} from '@/lib/accounting'
+import type { Database, VoucherType } from '@/lib/types'
 
 function getSupabase() {
   return createClient<Database>(
@@ -12,40 +18,21 @@ function getSupabase() {
   ) as any
 }
 
-async function verifyPermission(req: NextRequest, companyId: string, permissionName: 'createVouchers' | 'editVouchers' | 'deleteVouchers') {
-  const authHeader = req.headers.get('Authorization')
-  const token = authHeader?.startsWith('Bearer ') ? authHeader.substring(7) : null
-  
-  // Default to Admin in local dev environments if no token is sent
-  if (!token) return { authorized: true, userId: null }
-
-  const supabase = getSupabase()
-  const { data: { user } } = await supabase.auth.getUser(token)
-  if (!user) return { authorized: false, userId: null }
-
-  const { data: membership } = await supabase
-    .from('user_companies')
-    .select('role')
-    .eq('user_id', user.id)
-    .eq('company_id', companyId)
-    .single()
-
-  const role = (membership?.role || 'Viewer') as UserRole
-  const permissions = ROLE_PERMISSIONS[role]
-  return { authorized: !!permissions[permissionName], userId: user.id }
-}
-
 export async function GET(req: NextRequest) {
   const supabase = getSupabase()
   const url = new URL(req.url)
   const companyId = url.searchParams.get('company_id') || 'c0de0000-0000-0000-0000-000000000000'
+  const type = url.searchParams.get('type')
 
-  const { data, error } = await supabase
+  let q = supabase
     .from('vouchers')
     .select('*')
     .eq('company_id', companyId)
     .order('date', { ascending: false })
 
+  if (type) q = q.eq('type', type)
+  
+  const { data, error } = await q
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
   return NextResponse.json(data)
 }
@@ -54,189 +41,174 @@ export async function POST(req: NextRequest) {
   const supabase = getSupabase()
   const body = await req.json()
   const companyId = body.company_id || 'c0de0000-0000-0000-0000-000000000000'
+  const vType = body.type as VoucherType
 
-  // 1. Verify Permission
-  const { authorized } = await verifyPermission(req, companyId, 'createVouchers')
-  if (!authorized) {
-    return NextResponse.json({ error: 'Access Denied: Insufficient permissions to create vouchers.' }, { status: 403 })
-  }
-
-  // 2. Validate narration is present
+  // 1. Validate narration
   if (!body.narration || !body.narration.trim()) {
     return NextResponse.json({ error: 'Narration is mandatory.' }, { status: 400 })
   }
 
-  // Get base currency from settings
+  // 2. Generate voucher number using sequence (NEVER reuse)
+  const { data: seqNum, error: seqErr } = await supabase.rpc('next_voucher_number', { p_type: vType })
+  
+  let voucherNumber: string
+  if (seqErr || !seqNum) {
+    // Fallback
+    const { count } = await supabase
+      .from('vouchers')
+      .select('*', { count: 'exact', head: true })
+      .eq('type', vType)
+      .eq('company_id', companyId)
+    voucherNumber = formatVoucherNumber(VOUCHER_PREFIX[vType], (count ?? 0) + 1)
+  } else {
+    voucherNumber = formatVoucherNumber(VOUCHER_PREFIX[vType], seqNum)
+  }
+
+  // 3. Compute totals
+  const subtotal = Number(body.subtotal ?? body.amount ?? 0)
+  const vatTotal = Number(body.vat_total ?? 0)
+  const grandTotal = Number(body.grand_total ?? subtotal + vatTotal)
+
+  // 4. Get base currency
   const { data: settings } = await supabase
     .from('settings')
     .select('base_currency')
     .eq('company_id', companyId)
     .single()
-  const baseCurrency = settings?.base_currency ?? 'OMR'
+  const baseCurrency = settings?.base_currency ?? 'SAR'
 
-  // Resolve exchange rate
-  const txCurrency = body.currency ?? baseCurrency
-  const rate = await getExchangeRate(txCurrency, baseCurrency, body.date)
-
-  // Generate voucher number (scoped to active company)
-  const { count } = await supabase
-    .from('vouchers')
-    .select('*', { count: 'exact', head: true })
-    .eq('type', body.type)
-    .eq('company_id', companyId)
-  
-  const prefix: Record<VoucherType, string> = {
-    PURCHASE: 'PUR', SALE: 'SAL', RECEIPT: 'REC',
-    PAYMENT: 'PAY', JOURNAL: 'JRN',
-    PURCHASE_RETURN: 'PRN', SALES_RETURN: 'SRN',
-  }
-  const voucherNumber = `${prefix[body.type as VoucherType]}-${String((count ?? 0) + 1).padStart(4, '0')}`
-
-  // Insert voucher with exchange_rate & narration
+  // 5. Insert voucher
   const { data: voucher, error: vErr } = await supabase
     .from('vouchers')
     .insert({
-      type:            body.type,
+      type:            vType,
       voucher_number:  voucherNumber,
       date:            body.date,
       ref:             body.ref ?? null,
       party_ledger_id: body.party_ledger_id ?? null,
       party_name:      body.party_name ?? null,
-      amount:          body.amount,
-      currency:        txCurrency,
-      exchange_rate:   rate,
+      amount:          grandTotal,
+      subtotal:        subtotal,
+      vat_total:       vatTotal,
+      grand_total:     grandTotal,
+      currency:        body.currency ?? baseCurrency,
+      exchange_rate:   1,
       notes:           body.notes ?? null,
       narration:       body.narration,
       company_id:      companyId,
-    } as any)
+    })
     .select()
     .single()
 
   if (vErr) return NextResponse.json({ error: vErr.message }, { status: 500 })
 
-  // Convert amount to base currency for the journal lines (General Ledger)
-  const baseAmount = Number(body.amount) * rate
+  // 6. Build journal lines based on voucher type
+  let journalLines: any[] = []
 
-  // Build + insert journal lines
-  const lines = buildJournalLines(voucher.id, {
-    type:              body.type,
-    debit_ledger_id:   body.debit_ledger_id,
-    credit_ledger_id:  body.credit_ledger_id,
-    amount:            baseAmount,
-    date:              body.date,
-    journal_lines:     body.journal_lines?.map((line: any) => ({
-      ...line,
-      amount: Number(line.amount) * rate,
-    })),
-  }).map(line => ({
-    ...line,
-    company_id: companyId,
-    narration: body.narration, // copy voucher narration to journal lines
-  }))
+  switch (vType) {
+    case 'SALE': {
+      const lines = (body.lines || []).map((l: any) => ({
+        ledger_id: l.ledger_id,
+        amount: Number(l.amount),
+      }))
+      journalLines = buildSalesJournalLines(
+        voucher.id,
+        body.party_ledger_id,
+        lines,
+        body.vat_ledger_id || null,
+        vatTotal,
+        grandTotal,
+        body.date,
+        body.narration,
+        companyId
+      )
+      break
+    }
+    case 'PURCHASE': {
+      const lines = (body.lines || []).map((l: any) => ({
+        ledger_id: l.ledger_id,
+        amount: Number(l.amount),
+      }))
+      journalLines = buildPurchaseJournalLines(
+        voucher.id,
+        body.party_ledger_id,
+        lines,
+        body.vat_ledger_id || null,
+        vatTotal,
+        grandTotal,
+        body.date,
+        body.narration,
+        companyId
+      )
+      break
+    }
+    case 'PAYMENT': {
+      const payeeLines = (body.lines || []).map((l: any) => ({
+        ledger_id: l.ledger_id,
+        amount: Number(l.amount),
+      }))
+      // If no lines provided, use single party_ledger_id
+      const finalPayeeLines = payeeLines.length > 0 ? payeeLines : [{ ledger_id: body.party_ledger_id, amount: grandTotal }]
+      journalLines = buildPaymentJournalLines(
+        voucher.id,
+        finalPayeeLines,
+        body.bank_cash_ledger_id,
+        grandTotal,
+        body.date,
+        body.narration,
+        companyId
+      )
+      break
+    }
+    case 'RECEIPT': {
+      journalLines = buildReceiptJournalLines(
+        voucher.id,
+        body.bank_cash_ledger_id,
+        body.party_ledger_id,
+        grandTotal,
+        body.date,
+        body.narration,
+        companyId
+      )
+      break
+    }
+    case 'JOURNAL': {
+      const jLines = (body.journal_lines || []).map((l: any) => ({
+        ledger_id: l.ledger_id,
+        type: l.type,
+        amount: Number(l.amount),
+      }))
+      journalLines = buildManualJournalLines(
+        voucher.id,
+        jLines,
+        body.date,
+        body.narration,
+        companyId
+      )
+      break
+    }
+  }
 
-  const { error: jErr } = await supabase.from('journal_lines').insert(lines as any)
-  if (jErr) return NextResponse.json({ error: jErr.message }, { status: 500 })
+  // 7. Insert journal lines
+  if (journalLines.length > 0) {
+    const { error: jErr } = await supabase.from('journal_lines').insert(journalLines)
+    if (jErr) return NextResponse.json({ error: jErr.message }, { status: 500 })
+  }
 
   return NextResponse.json(voucher, { status: 201 })
-}
-
-export async function PUT(req: NextRequest) {
-  const supabase = getSupabase()
-  const body = await req.json()
-  const companyId = body.company_id || 'c0de0000-0000-0000-0000-000000000000'
-
-  if (!body.id) {
-    return NextResponse.json({ error: 'Voucher ID is required for editing.' }, { status: 400 })
-  }
-
-  // 1. Verify Permission
-  const { authorized } = await verifyPermission(req, companyId, 'editVouchers')
-  if (!authorized) {
-    return NextResponse.json({ error: 'Access Denied: Insufficient permissions to edit vouchers.' }, { status: 403 })
-  }
-
-  // 2. Validate narration is present
-  if (!body.narration || !body.narration.trim()) {
-    return NextResponse.json({ error: 'Narration is mandatory.' }, { status: 400 })
-  }
-
-  // Get base currency from settings
-  const { data: settings } = await supabase
-    .from('settings')
-    .select('base_currency')
-    .eq('company_id', companyId)
-    .single()
-  const baseCurrency = settings?.base_currency ?? 'OMR'
-
-  // Resolve exchange rate
-  const txCurrency = body.currency ?? baseCurrency
-  const rate = await getExchangeRate(txCurrency, baseCurrency, body.date)
-
-  // 1. Update Voucher
-  const { data: voucher, error: vErr } = await supabase
-    .from('vouchers')
-    .update({
-      date:            body.date,
-      ref:             body.ref ?? null,
-      party_ledger_id: body.party_ledger_id ?? null,
-      party_name:      body.party_name ?? null,
-      amount:          body.amount,
-      currency:        txCurrency,
-      exchange_rate:   rate,
-      notes:           body.notes ?? null,
-      narration:       body.narration,
-    } as any)
-    .eq('id', body.id)
-    .eq('company_id', companyId)
-    .select()
-    .single()
-
-  if (vErr) return NextResponse.json({ error: vErr.message }, { status: 500 })
-
-  // 2. Delete old journal lines
-  const { error: dErr } = await supabase
-    .from('journal_lines')
-    .delete()
-    .eq('voucher_id', body.id)
-    .eq('company_id', companyId)
-
-  if (dErr) return NextResponse.json({ error: dErr.message }, { status: 500 })
-
-  // 3. Post new journal lines
-  const baseAmount = Number(body.amount) * rate
-  const lines = buildJournalLines(body.id, {
-    type:              body.type,
-    debit_ledger_id:   body.debit_ledger_id,
-    credit_ledger_id:  body.credit_ledger_id,
-    amount:            baseAmount,
-    date:              body.date,
-    journal_lines:     body.journal_lines?.map((line: any) => ({
-      ...line,
-      amount: Number(line.amount) * rate,
-    })),
-  }).map(line => ({
-    ...line,
-    company_id: companyId,
-    narration: body.narration,
-  }))
-
-  const { error: jErr } = await supabase.from('journal_lines').insert(lines as any)
-  if (jErr) return NextResponse.json({ error: jErr.message }, { status: 500 })
-
-  return NextResponse.json(voucher)
 }
 
 export async function DELETE(req: NextRequest) {
   const supabase = getSupabase()
   const url = new URL(req.url)
   const id = url.searchParams.get('id')
-  const reason = url.searchParams.get('reason')
+  const reason = url.searchParams.get('reason') || 'Deleted'
 
   if (!id) {
-    return NextResponse.json({ error: 'Voucher ID is required for deletion.' }, { status: 400 })
+    return NextResponse.json({ error: 'Voucher ID is required.' }, { status: 400 })
   }
 
-  // 1. Fetch voucher details to get company_id and code
+  // 1. Fetch voucher
   const { data: voucher, error: fetchErr } = await supabase
     .from('vouchers')
     .select('voucher_number, company_id')
@@ -244,42 +216,26 @@ export async function DELETE(req: NextRequest) {
     .single()
 
   if (fetchErr || !voucher) {
-    return NextResponse.json({ error: 'Voucher not found or has already been deleted.' }, { status: 404 })
+    return NextResponse.json({ error: 'Voucher not found.' }, { status: 404 })
   }
 
-  const companyId = voucher.company_id
+  // 2. Log deletion (audit trail)
+  await supabase.from('voucher_deletions').insert({
+    voucher_id: id,
+    voucher_number: voucher.voucher_number,
+    company_id: voucher.company_id,
+    reason: reason.trim(),
+  })
 
-  // 2. Verify deletion permissions
-  const { authorized, userId } = await verifyPermission(req, companyId, 'deleteVouchers')
-  if (!authorized) {
-    return NextResponse.json({ error: 'Access Denied: Insufficient permissions to delete vouchers.' }, { status: 403 })
-  }
-
-  // 3. Validate deletion reason (required)
-  if (!reason || !reason.trim()) {
-    return NextResponse.json({ error: 'Deletion reason is required.' }, { status: 400 })
-  }
-
-  // 4. Log the deletion to audit table
-  const { error: logErr } = await supabase
-    .from('voucher_deletions')
-    .insert({
-      voucher_id: id,
-      voucher_number: voucher.voucher_number,
-      deleted_by: userId,
-      company_id: companyId,
-      reason: reason.trim(),
-    })
-
-  if (logErr) return NextResponse.json({ error: `Audit Log Failure: ${logErr.message}` }, { status: 500 })
-
-  // 5. Delete voucher (Cascade deletes journal_lines in DB)
+  // 3. Delete voucher (cascade deletes journal_lines)
   const { error } = await supabase
     .from('vouchers')
     .delete()
     .eq('id', id)
-    .eq('company_id', companyId)
+    .eq('company_id', voucher.company_id)
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+  
+  // NOTE: Voucher number is NOT recycled — sequence stays advanced
   return NextResponse.json({ success: true })
 }

@@ -1,4 +1,4 @@
 import { redirect } from 'next/navigation'
-export default function ProfitLossReport() {
+export default function NewInvoicePage() {
   redirect('/masters')
 }

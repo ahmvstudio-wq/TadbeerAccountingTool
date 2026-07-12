@@ -1,17 +1,16 @@
 import { create } from 'zustand'
-import { UserRole } from '@/lib/types'
 
 interface UIState {
   sidebarOpen: boolean
   activeModal: string | null
   activeCompanyId: string | null
   activeCompanyName: string | null
-  userRole: UserRole | null
+  userRole: string | null
   setSidebarOpen: (open: boolean) => void
   openModal: (id: string) => void
   closeModal: () => void
   setActiveCompany: (id: string | null, name: string | null) => void
-  setUserRole: (role: UserRole | null) => void
+  setUserRole: (role: string | null) => void
 }
 
 export const useUIStore = create<UIState>((set) => ({

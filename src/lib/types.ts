@@ -1,18 +1,12 @@
 // ============================================================
-// DATABASE TYPES — mirrors Supabase schema exactly
+// TADBEER MVP V1 — TYPE DEFINITIONS
 // ============================================================
 
 export type Nature = 'ASSET' | 'LIABILITY' | 'INCOME' | 'EXPENSE' | 'EQUITY'
 export type EntryType = 'Dr' | 'Cr'
-export type VoucherType =
-  | 'PURCHASE'
-  | 'SALE'
-  | 'RECEIPT'
-  | 'PAYMENT'
-  | 'JOURNAL'
-  | 'PURCHASE_RETURN'
-  | 'SALES_RETURN'
+export type VoucherType = 'PURCHASE' | 'SALE' | 'RECEIPT' | 'PAYMENT' | 'JOURNAL'
 
+// ---- Groups ----
 export type DbGroup = {
   id: string
   name: string
@@ -31,6 +25,7 @@ export type Group = DbGroup & {
   ledgers?: Ledger[]
 }
 
+// ---- Ledgers ----
 export type Ledger = {
   id: string
   name: string
@@ -44,9 +39,38 @@ export type Ledger = {
   account_code: string
   classification: 'Personal' | 'Real' | 'Nominal'
   company_id: string
+  // Contact fields (MVP V1)
+  phone: string | null
+  email: string | null
+  vat_number: string | null
+  country: string | null
+  address: string | null
+  // Joined
   group?: Group
 }
 
+// ---- Inventory (Stock Item) ----
+export type Item = {
+  id: string
+  company_id: string
+  name: string
+  code: string | null
+  unit: string
+  buy_price: number
+  sell_price: number
+  tax_rate: number
+  stock_quantity: number
+  opening_quantity: number
+  opening_rate: number
+  opening_value: number
+  inventory_ledger_id: string | null
+  income_ledger_id: string | null
+  expense_ledger_id: string | null
+  created_at: string
+  updated_at: string
+}
+
+// ---- Vouchers ----
 export type Voucher = {
   id: string
   type: VoucherType
@@ -56,6 +80,9 @@ export type Voucher = {
   party_ledger_id: string | null
   party_name: string | null
   amount: number
+  subtotal: number
+  vat_total: number
+  grand_total: number
   currency: string
   exchange_rate: number
   notes: string | null
@@ -66,6 +93,7 @@ export type Voucher = {
   journal_lines?: JournalLine[]
 }
 
+// ---- Journal Lines ----
 export type JournalLine = {
   id: string
   voucher_id: string
@@ -79,6 +107,7 @@ export type JournalLine = {
   voucher?: Voucher
 }
 
+// ---- Settings ----
 export type Settings = {
   id: string
   company_name: string
@@ -89,101 +118,50 @@ export type Settings = {
   email: string | null
   logo_url: string | null
   company_id: string
+  vat_number: string | null
   created_at: string
   updated_at: string
 }
 
-export type ExchangeRate = {
-  id: string
-  from_currency: string
-  to_currency: string
-  rate: number
-  effective_date: string
-  company_id: string
-  created_at: string
-}
-
-// ============================================================
-// REPORT TYPES
-// ============================================================
-
-export interface TrialBalanceRow {
+// ---- Voucher Line (for multi-line Sales/Purchase) ----
+export interface VoucherLineItem {
   ledger_id: string
-  ledger_name: string
-  group_name: string
-  nature: Nature
-  total_dr: number
-  total_cr: number
-  balance: number
-  balance_type: EntryType
+  description: string
+  amount: number
+  vat_rate: number
+  vat_amount: number
 }
 
-export interface PLStatement {
-  income: { ledger_name: string; amount: number }[]
-  expenses: { ledger_name: string; amount: number }[]
-  total_income: number
-  total_expenses: number
-  net_profit: number
-  is_profit: boolean
-}
-
-export interface BalanceSheet {
-  assets: { group_name: string; ledger_name: string; amount: number }[]
-  liabilities: { group_name: string; ledger_name: string; amount: number }[]
-  equity: { group_name: string; ledger_name: string; amount: number }[]
-  total_assets: number
-  total_liabilities_equity: number
-  is_balanced: boolean
-}
-
-// ============================================================
-// FORM TYPES
-// ============================================================
-
+// ---- Form Types ----
 export interface VoucherFormData {
   type: VoucherType
   date: string
   party_ledger_id: string
-  debit_ledger_id: string
-  credit_ledger_id: string
   amount: number
   currency: string
   ref?: string
   notes?: string
+  narration: string
+  // Multi-line items (Sales/Purchase)
+  lines?: VoucherLineItem[]
+  // Payment/Receipt specific
+  bank_cash_ledger_id?: string
   // Journal-specific: multiple lines
   journal_lines?: { ledger_id: string; type: EntryType; amount: number }[]
 }
 
-// ============================================================
-// CURRENCY LIST
-// ============================================================
-
+// ---- Currency ----
 export const CURRENCIES = [
-  { code: 'OMR', name: 'Omani Rial',         symbol: 'ر.ع.' },
+  { code: 'SAR', name: 'Saudi Riyal',         symbol: '﷼'    },
+  { code: 'OMR', name: 'Omani Rial',          symbol: 'ر.ع.' },
+  { code: 'AED', name: 'UAE Dirham',          symbol: 'د.إ'  },
   { code: 'USD', name: 'US Dollar',           symbol: '$'    },
   { code: 'EUR', name: 'Euro',                symbol: '€'    },
   { code: 'GBP', name: 'British Pound',       symbol: '£'    },
-  { code: 'AED', name: 'UAE Dirham',          symbol: 'د.إ'  },
-  { code: 'SAR', name: 'Saudi Riyal',         symbol: '﷼'    },
   { code: 'QAR', name: 'Qatari Riyal',        symbol: 'ر.ق'  },
   { code: 'KWD', name: 'Kuwaiti Dinar',       symbol: 'د.ك'  },
   { code: 'BHD', name: 'Bahraini Dinar',      symbol: 'BD'   },
   { code: 'INR', name: 'Indian Rupee',        symbol: '₹'    },
-  { code: 'PKR', name: 'Pakistani Rupee',     symbol: '₨'    },
-  { code: 'EGP', name: 'Egyptian Pound',      symbol: 'E£'   },
-  { code: 'JPY', name: 'Japanese Yen',        symbol: '¥'    },
-  { code: 'CNY', name: 'Chinese Yuan',        symbol: '¥'    },
-  { code: 'CHF', name: 'Swiss Franc',         symbol: 'Fr'   },
-  { code: 'CAD', name: 'Canadian Dollar',     symbol: 'CA$'  },
-  { code: 'AUD', name: 'Australian Dollar',   symbol: 'A$'   },
-  { code: 'SGD', name: 'Singapore Dollar',    symbol: 'S$'   },
-  { code: 'HKD', name: 'Hong Kong Dollar',    symbol: 'HK$'  },
-  { code: 'MYR', name: 'Malaysian Ringgit',   symbol: 'RM'   },
-  { code: 'TRY', name: 'Turkish Lira',        symbol: '₺'    },
-  { code: 'ZAR', name: 'South African Rand',  symbol: 'R'    },
-  { code: 'BDT', name: 'Bangladeshi Taka',    symbol: '৳'    },
-  { code: 'LKR', name: 'Sri Lankan Rupee',    symbol: '₨'    },
-  { code: 'NGN', name: 'Nigerian Naira',      symbol: '₦'    },
 ] as const
 
 export type CurrencyCode = typeof CURRENCIES[number]['code']
@@ -192,10 +170,25 @@ export function getCurrencySymbol(code: string): string {
   return CURRENCIES.find(c => c.code === code)?.symbol ?? code
 }
 
-// ============================================================
-// DATABASE SHAPE (for Supabase typed client)
-// ============================================================
+// ---- Company (minimal) ----
+export interface Company {
+  id: string
+  name: string
+  created_at: string
+  updated_at: string
+}
 
+export interface UserCompany {
+  id: string
+  user_id: string
+  company_id: string
+  role: string
+  created_at: string
+  updated_at: string
+  company?: Company
+}
+
+// ---- Database Shape ----
 export type Database = {
   public: {
     Tables: {
@@ -219,7 +212,6 @@ export type Database = {
         Update: Partial<JournalLine>
         Relationships: []
       }
-      exchange_rates: { Row: ExchangeRate; Insert: Omit<ExchangeRate, 'id' | 'created_at'>; Update: Partial<ExchangeRate>; Relationships: [] }
       companies: { Row: Company; Insert: Omit<Company, 'id' | 'created_at' | 'updated_at'>; Update: Partial<Company>; Relationships: [] }
       user_companies: { Row: UserCompany; Insert: Omit<UserCompany, 'id' | 'created_at' | 'updated_at'>; Update: Partial<UserCompany>; Relationships: [] }
     }
@@ -232,79 +224,3 @@ export type Database = {
     }
   }
 }
-
-export type UserRole = 'Admin' | 'Finance Mgr' | 'Accountant' | 'Auditor' | 'Viewer'
-
-export interface Company {
-  id: string
-  name: string
-  created_at: string
-  updated_at: string
-}
-
-export interface UserCompany {
-  id: string
-  user_id: string
-  company_id: string
-  role: UserRole
-  created_at: string
-  updated_at: string
-  company?: Company
-}
-
-export const ROLE_PERMISSIONS: Record<UserRole, {
-  createVouchers: boolean
-  editVouchers: boolean
-  deleteVouchers: boolean
-  chartOfAccounts: boolean
-  viewReports: boolean
-  exportReports: boolean
-  manageUsers: boolean
-}> = {
-  Admin: {
-    createVouchers: true,
-    editVouchers: true,
-    deleteVouchers: true,
-    chartOfAccounts: true,
-    viewReports: true,
-    exportReports: true,
-    manageUsers: true,
-  },
-  'Finance Mgr': {
-    createVouchers: true,
-    editVouchers: true,
-    deleteVouchers: true,
-    chartOfAccounts: true,
-    viewReports: true,
-    exportReports: true,
-    manageUsers: false,
-  },
-  Accountant: {
-    createVouchers: true,
-    editVouchers: false,
-    deleteVouchers: false,
-    chartOfAccounts: false,
-    viewReports: true,
-    exportReports: true,
-    manageUsers: false,
-  },
-  Auditor: {
-    createVouchers: false,
-    editVouchers: false,
-    deleteVouchers: false,
-    chartOfAccounts: false,
-    viewReports: true,
-    exportReports: true,
-    manageUsers: false,
-  },
-  Viewer: {
-    createVouchers: false,
-    editVouchers: false,
-    deleteVouchers: false,
-    chartOfAccounts: false,
-    viewReports: true,
-    exportReports: false,
-    manageUsers: false,
-  },
-}
-

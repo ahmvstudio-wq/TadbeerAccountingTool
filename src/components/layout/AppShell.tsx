@@ -177,7 +177,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             display: 'flex', alignItems: 'center', justifyContent: 'center',
             color: 'var(--color-teal)', marginBottom: '0.5rem'
           }}>
-            <img src="/logo.png" alt="Tadbeer" style={{ width: 34, height: 34, objectFit: 'contain' }} />
+            <img src="/Logo .png" alt="Tadbeer" style={{ width: 34, height: 34, objectFit: 'contain' }} />
           </div>
           <h2 style={{ fontSize: '1.25rem', fontWeight: 800, color: 'var(--color-teal)', letterSpacing: '-0.02em' }}>
             Tadbeer Transformations

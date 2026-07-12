@@ -32,14 +32,18 @@ const groupSchema = z.object({
   parent_id: z.string().optional().nullable(),
   nature:    z.enum(['ASSET','LIABILITY','INCOME','EXPENSE','EQUITY']),
 })
+
 const ledgerSchema = z.object({
   name:            z.string().min(2, 'Name is required'),
   group_id:        z.string().min(1, 'Select a group'),
-  opening_balance: z.coerce.number().min(0),
-  opening_type:    z.enum(['Dr','Cr']),
+  opening_balance: z.coerce.number(),
   description:     z.string().optional(),
-  account_code:    z.string().optional(),
   classification:  z.enum(['Personal','Real','Nominal']).optional(),
+  phone:           z.string().optional(),
+  email:           z.string().optional(),
+  vat_number:      z.string().optional(),
+  country:         z.string().optional(),
+  address:         z.string().optional(),
 })
 
 type GroupForm  = z.infer<typeof groupSchema>
@@ -63,8 +67,8 @@ export default function MastersPage() {
   const loadData = useCallback(async () => {
     setLoading(true)
     const [{ data: g }, { data: l }] = await Promise.all([
-      supabase.from('groups').select('*').eq('company_id', currentCompanyId).order('sort_order'),
-      supabase.from('ledgers').select('*, group:groups(id,name,nature)').eq('company_id', currentCompanyId).order('name'),
+      (supabase as any).from('groups').select('*').eq('company_id', currentCompanyId).order('sort_order'),
+      (supabase as any).from('ledgers').select('*, group:groups(id,name,nature)').eq('company_id', currentCompanyId).order('name'),
     ])
     setGroups(g ?? [])
     setLedgers(l ?? [])
@@ -99,7 +103,7 @@ export default function MastersPage() {
   }
 
   async function deleteLedger(id: string) {
-    const { count } = await supabase
+    const { count } = await (supabase as any)
       .from('journal_lines')
       .select('*', { count: 'exact', head: true })
       .eq('ledger_id', id)
@@ -300,17 +304,19 @@ function GroupNode({
                 ))}
                 {ledgers.map(ledger => (
                   <div key={ledger.id} className="tree-ledger-item">
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
                       <strong style={{ color: 'var(--color-gold-dark)', fontSize: '0.8rem' }}>
                         [{ledger.account_code}]
                       </strong>
                       <span style={{ fontSize: '0.9rem', fontWeight: 500 }}>{ledger.name}</span>
-                      <span className="badge" style={{ backgroundColor: 'var(--color-surface-alt)', border: `1px solid ${CLASSIFICATION_COLOR[ledger.classification] || 'var(--color-border)'}`, color: CLASSIFICATION_COLOR[ledger.classification] || 'var(--color-text)', fontSize: '0.65rem', padding: '1px 6px' }}>
-                        {ledger.classification}
-                      </span>
                       {Number(ledger.opening_balance) > 0 && (
                         <span className="text-muted text-xs">
                           (Start: {Number(ledger.opening_balance).toLocaleString('en-US', { minimumFractionDigits: 3 })} {ledger.opening_type})
+                        </span>
+                      )}
+                      {(ledger.phone || ledger.email) && (
+                        <span style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)' }}>
+                          • {ledger.phone || ledger.email}
                         </span>
                       )}
                     </div>
@@ -394,14 +400,11 @@ function GroupNode({
           {ledgers.map(ledger => (
             <div key={ledger.id} className="tree-connector-line">
               <div className="tree-ledger-item">
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
                   <strong style={{ color: 'var(--color-gold-dark)', fontSize: '0.75rem' }}>
                     [{ledger.account_code}]
                   </strong>
                   <span style={{ fontSize: '0.85rem' }}>{ledger.name}</span>
-                  <span className="badge" style={{ backgroundColor: 'var(--color-surface-alt)', border: `1px solid ${CLASSIFICATION_COLOR[ledger.classification]}`, color: CLASSIFICATION_COLOR[ledger.classification], fontSize: '0.65rem', padding: '1px 6px' }}>
-                    {ledger.classification}
-                  </span>
                   {Number(ledger.opening_balance) > 0 && (
                     <span className="text-muted text-xs">
                       (Start: {Number(ledger.opening_balance).toLocaleString('en-US', { minimumFractionDigits: 3 })} {ledger.opening_type})
@@ -463,7 +466,7 @@ function GroupFormModal({ groups, companyId, groupToEdit, onClose, onSaved }: {
     let payload: any = isEdit ? { ...data, id: groupToEdit.id, company_id: companyId } : { ...data, company_id: companyId }
 
     if (!isEdit) {
-      const { data: { user } } = await supabase.auth.getUser()
+      const { data: { user } } = await (supabase as any).auth.getUser()
       if (user) payload.created_by = user.id
     }
 
@@ -551,11 +554,14 @@ function LedgerFormModal({ groups, companyId, ledgerToEdit, onClose, onSaved }: 
       name: ledgerToEdit.name,
       group_id: ledgerToEdit.group_id,
       opening_balance: ledgerToEdit.opening_balance,
-      opening_type: ledgerToEdit.opening_type,
       description: ledgerToEdit.description || '',
-      account_code: ledgerToEdit.account_code || '',
       classification: ledgerToEdit.classification || 'Nominal',
-    } : { opening_balance: 0, opening_type: 'Dr', classification: 'Nominal' },
+      phone: ledgerToEdit.phone || '',
+      email: ledgerToEdit.email || '',
+      vat_number: ledgerToEdit.vat_number || '',
+      country: ledgerToEdit.country || 'Oman',
+      address: ledgerToEdit.address || '',
+    } : { opening_balance: 0, classification: 'Nominal', country: 'Oman' },
   })
 
   async function onSubmit(data: LedgerForm) {
@@ -563,7 +569,19 @@ function LedgerFormModal({ groups, companyId, ledgerToEdit, onClose, onSaved }: 
     const isEdit = !!ledgerToEdit
     const url = '/api/ledgers'
     const method = isEdit ? 'PUT' : 'POST'
-    const payload = isEdit ? { ...data, id: ledgerToEdit.id, company_id: companyId } : { ...data, company_id: companyId }
+    
+    // Auto-infer Dr/Cr type from balance sign:
+    // Positive balance = Dr, Negative balance = Cr
+    const sign = Number(data.opening_balance) < 0 ? 'Cr' : 'Dr'
+    const absVal = Math.abs(Number(data.opening_balance))
+
+    const payload = {
+      ...data,
+      opening_balance: absVal,
+      opening_type: sign,
+      id: ledgerToEdit?.id,
+      company_id: companyId,
+    }
 
     try {
       const res = await fetch(url, {
@@ -584,7 +602,7 @@ function LedgerFormModal({ groups, companyId, ledgerToEdit, onClose, onSaved }: 
 
   return (
     <div className="modal-overlay" onClick={onClose}>
-      <div className="modal" onClick={e => e.stopPropagation()}>
+      <div className="modal" onClick={e => e.stopPropagation()} style={{ maxWidth: 640 }}>
         <div className="modal-header">
           <span className="modal-title">{ledgerToEdit ? 'Edit Account Settings' : 'Create New Account'}</span>
           <button className="modal-close" onClick={onClose}><X size={18} /></button>
@@ -597,6 +615,7 @@ function LedgerFormModal({ groups, companyId, ledgerToEdit, onClose, onSaved }: 
                 <span>{apiError}</span>
               </div>
             )}
+            
             <div className="form-grid form-grid-2">
               <div className="form-group">
                 <label className="form-label required">Account Name</label>
@@ -604,18 +623,22 @@ function LedgerFormModal({ groups, companyId, ledgerToEdit, onClose, onSaved }: 
                 {errors.name && <span className="form-error">{errors.name.message}</span>}
               </div>
               <div className="form-group">
-                <label className="form-label">Account Code (Optional)</label>
-                <input className="form-control" {...register('account_code')} placeholder="Autogenerated if empty" />
-              </div>
-            </div>
-            <div className="form-grid form-grid-2">
-              <div className="form-group">
                 <label className="form-label required">Under Group / Folder</label>
                 <select className={`form-control ${errors.group_id ? 'error' : ''}`} {...register('group_id')}>
                   <option value="">— Select Group —</option>
                   {groups.map(g => <option key={g.id} value={g.id}>{g.name}</option>)}
                 </select>
                 {errors.group_id && <span className="form-error">{errors.group_id.message}</span>}
+              </div>
+            </div>
+
+            <div className="form-grid form-grid-2">
+              <div className="form-group">
+                <label className="form-label">Starting Balance</label>
+                <input type="number" step="0.001" className="form-control" placeholder="Positive for Debit (Dr), Negative for Credit (Cr)" {...register('opening_balance')} />
+                <span style={{ fontSize: '0.7rem', color: 'var(--color-text-muted)' }}>
+                  Use negative values for Cr balance (e.g. Loans, Payables, Capital).
+                </span>
               </div>
               <div className="form-group">
                 <label className="form-label required">Classification</label>
@@ -626,22 +649,45 @@ function LedgerFormModal({ groups, companyId, ledgerToEdit, onClose, onSaved }: 
                 </select>
               </div>
             </div>
+
+            <div className="form-group">
+              <label className="form-label">Account Code</label>
+              <input className="form-control" disabled value={ledgerToEdit?.account_code || 'Auto-generated on save'} style={{ background: 'var(--color-surface-alt)', cursor: 'not-allowed' }} />
+            </div>
+
+            <hr style={{ border: 'none', borderTop: '1px solid var(--color-border)', margin: '0.5rem 0' }} />
+            <h4 style={{ fontSize: '0.85rem', fontWeight: 700, margin: 0 }}>Contact Details (Customers / Suppliers / Banks)</h4>
+
             <div className="form-grid form-grid-2">
               <div className="form-group">
-                <label className="form-label">Starting Balance</label>
-                <input type="number" step="0.001" className="form-control" placeholder="0.000" {...register('opening_balance')} />
+                <label className="form-label">Phone Number</label>
+                <input className="form-control" {...register('phone')} placeholder="+968 1234 5678" />
               </div>
               <div className="form-group">
-                <label className="form-label">Starting Balance Type</label>
-                <select className="form-control" {...register('opening_type')}>
-                  <option value="Dr">Debit (Dr) — Positive asset / expense balance</option>
-                  <option value="Cr">Credit (Cr) — Owing liability / income / equity balance</option>
-                </select>
+                <label className="form-label">Email Address</label>
+                <input type="email" className="form-control" {...register('email')} placeholder="billing@company.com" />
               </div>
             </div>
+
+            <div className="form-grid form-grid-2">
+              <div className="form-group">
+                <label className="form-label">VAT Identification Number</label>
+                <input className="form-control" {...register('vat_number')} placeholder="OM123456789" />
+              </div>
+              <div className="form-group">
+                <label className="form-label">Country</label>
+                <input className="form-control" {...register('country')} placeholder="Oman" />
+              </div>
+            </div>
+
             <div className="form-group">
-              <label className="form-label">Description (optional)</label>
-              <textarea className="form-control" {...register('description')} placeholder="Add descriptive notes..." style={{ height: 60, paddingTop: 8 }} />
+              <label className="form-label">Full Address</label>
+              <textarea className="form-control" {...register('address')} placeholder="Building, Street, City, ZIP Code" style={{ height: 48, paddingTop: 8 }} />
+            </div>
+
+            <div className="form-group">
+              <label className="form-label">Description / Remarks</label>
+              <textarea className="form-control" {...register('description')} placeholder="Add descriptive notes..." style={{ height: 48, paddingTop: 8 }} />
             </div>
           </div>
           <div className="modal-footer">
@@ -666,6 +712,10 @@ function QuickPartyModal({ type, groups, companyId, onClose, onSaved }: {
 }) {
   const [name, setName] = useState('')
   const [balance, setBalance] = useState(0)
+  const [phone, setPhone] = useState('')
+  const [email, setEmail] = useState('')
+  const [vatNumber, setVatNumber] = useState('')
+  const [address, setAddress] = useState('')
   const [desc, setDesc] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
@@ -681,9 +731,6 @@ function QuickPartyModal({ type, groups, companyId, onClose, onSaved }: {
     setError(null)
 
     try {
-      // 1. Resolve or Create Sub-Group
-      // For Customer: Assets > Sundry Debtors
-      // For Supplier: Liabilities > Sundry Creditors
       let targetGroupName = type === 'customer' ? 'Sundry Debtors' : 'Sundry Creditors'
       let targetGroupNature = type === 'customer' ? ('ASSET' as Nature) : ('LIABILITY' as Nature)
       
@@ -694,7 +741,6 @@ function QuickPartyModal({ type, groups, companyId, onClose, onSaved }: {
       let groupId = matchedGroup?.id
 
       if (!groupId) {
-        // If not found, create parent group under Current Assets/Liabilities or as Root group
         let parentGroup = groups.find(
           g => g.name.toLowerCase().includes(type === 'customer' ? 'current asset' : 'current liability')
         )
@@ -719,18 +765,26 @@ function QuickPartyModal({ type, groups, companyId, onClose, onSaved }: {
         groupId = newGrp.id
       }
 
-      // 2. Insert the customer / supplier ledger account under the group
+      const balanceNum = Number(balance)
+      const absVal = Math.abs(balanceNum)
+      const sign = balanceNum < 0 ? 'Cr' : (type === 'customer' ? 'Dr' : 'Cr')
+
       const res = await fetch('/api/ledgers', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           name: name.trim(),
           group_id: groupId,
-          opening_balance: balance,
-          opening_type: type === 'customer' ? 'Dr' : 'Cr',
+          opening_balance: absVal,
+          opening_type: sign,
           classification: 'Personal',
           description: desc.trim() || `${type === 'customer' ? 'Customer' : 'Supplier'} ledger`,
           company_id: companyId,
+          phone: phone.trim() || null,
+          email: email.trim() || null,
+          vat_number: vatNumber.trim() || null,
+          country: 'Oman',
+          address: address.trim() || null,
         }),
       })
 
@@ -750,7 +804,7 @@ function QuickPartyModal({ type, groups, companyId, onClose, onSaved }: {
 
   return (
     <div className="modal-overlay" onClick={onClose}>
-      <div className="modal" onClick={e => e.stopPropagation()}>
+      <div className="modal" onClick={e => e.stopPropagation()} style={{ maxWidth: 500 }}>
         <div className="modal-header">
           <span className="modal-title">
             Quick Add {type === 'customer' ? 'Customer' : 'Supplier'} Ledger
@@ -758,20 +812,20 @@ function QuickPartyModal({ type, groups, companyId, onClose, onSaved }: {
           <button className="modal-close" onClick={onClose}><X size={18} /></button>
         </div>
         <form onSubmit={handleQuickSave}>
-          <div className="modal-body" style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+          <div className="modal-body" style={{ display: 'flex', flexDirection: 'column', gap: '0.85rem' }}>
             {error && (
               <div className="alert alert-danger" style={{ fontSize: '0.85rem' }}>
                 <AlertCircle size={16} />
                 <span>{error}</span>
               </div>
             )}
-            <div style={{ fontSize: '0.8rem', color: 'var(--color-text-secondary)', padding: '0.75rem 1rem', background: 'var(--color-teal-pale)', border: '1px solid var(--color-teal-muted)', borderRadius: 'var(--radius-md)' }}>
-              This will automatically create a <strong>Personal</strong> ledger account under: <br/>
+            <div style={{ fontSize: '0.8rem', color: 'var(--color-text-secondary)', padding: '0.5rem 0.75rem', background: 'var(--color-teal-pale)', border: '1px solid var(--color-teal-muted)', borderRadius: 'var(--radius-md)' }}>
+              Creates a <strong>Personal</strong> ledger under: <br/>
               <strong>{type === 'customer' ? 'Assets > Sundry Debtors' : 'Liabilities > Sundry Creditors'}</strong>
             </div>
 
             <div className="form-group">
-              <label className="form-label required">Name</label>
+              <label className="form-label required font-semibold">Name</label>
               <input
                 className="form-control"
                 placeholder={type === 'customer' ? 'ABC Trading' : 'XYZ LLC'}
@@ -782,25 +836,46 @@ function QuickPartyModal({ type, groups, companyId, onClose, onSaved }: {
             </div>
 
             <div className="form-group">
-              <label className="form-label">Opening balance (OMR)</label>
+              <label className="form-label font-semibold">Opening balance (OMR)</label>
               <input
                 type="number"
                 step="0.001"
                 className="form-control"
-                placeholder="0.000"
-                value={balance}
+                placeholder="Positive for Dr, Negative for Cr"
+                value={balance || ''}
                 onChange={e => setBalance(Number(e.target.value))}
               />
             </div>
 
+            <div className="form-grid form-grid-2">
+              <div className="form-group">
+                <label className="form-label">Phone Number</label>
+                <input className="form-control" value={phone} onChange={e => setPhone(e.target.value)} placeholder="+968 1234 5678" />
+              </div>
+              <div className="form-group">
+                <label className="form-label">VAT ID Number</label>
+                <input className="form-control" value={vatNumber} onChange={e => setVatNumber(e.target.value)} placeholder="OM123456789" />
+              </div>
+            </div>
+
             <div className="form-group">
-              <label className="form-label">Description (Optional)</label>
+              <label className="form-label">Email</label>
+              <input type="email" className="form-control" value={email} onChange={e => setEmail(e.target.value)} placeholder="billing@domain.com" />
+            </div>
+
+            <div className="form-group">
+              <label className="form-label">Address</label>
+              <input className="form-control" value={address} onChange={e => setAddress(e.target.value)} placeholder="Muscat, Oman" />
+            </div>
+
+            <div className="form-group">
+              <label className="form-label">Remarks / Description</label>
               <textarea
                 className="form-control"
-                placeholder="Address, phone, or other registry notes..."
+                placeholder="Notes..."
                 value={desc}
                 onChange={e => setDesc(e.target.value)}
-                style={{ height: 60, paddingTop: 8 }}
+                style={{ height: 48, paddingTop: 8 }}
               />
             </div>
           </div>

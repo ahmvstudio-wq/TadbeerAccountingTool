@@ -2,53 +2,46 @@
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import {
-  LayoutDashboard,
   BookOpen,
   FileText,
-  BarChart3,
   Settings,
   ChevronRight,
-  Users,
   TrendingUp,
+  ShoppingCart,
+  CreditCard,
+  Receipt,
+  BookMarked,
+  Box,
 } from 'lucide-react'
 
-interface NavItem {
-  href: string
-  label: string
-  icon: React.ReactNode
-}
-
 const NAV_SECTIONS = [
-  {
-    label: 'Overview',
-    items: [
-      { href: '/dashboard', label: 'Dashboard', icon: <LayoutDashboard size={18} /> },
-    ],
-  },
   {
     label: 'Setup',
     items: [
       { href: '/masters', label: 'Chart of Accounts', icon: <BookOpen size={18} /> },
+      { href: '/items', label: 'Services Registry', icon: <Box size={18} /> },
     ],
   },
   {
-    label: 'Transactions',
+    label: 'Vouchers',
     items: [
-      { href: '/vouchers', label: 'Vouchers', icon: <FileText size={18} /> },
+      { href: '/vouchers/sales', label: 'Sales Voucher', icon: <TrendingUp size={18} /> },
+      { href: '/vouchers/purchase', label: 'Purchase Voucher', icon: <ShoppingCart size={18} /> },
+      { href: '/vouchers/payment', label: 'Payment Voucher', icon: <CreditCard size={18} /> },
+      { href: '/vouchers/receipt', label: 'Receipt Voucher', icon: <Receipt size={18} /> },
+      { href: '/vouchers/journal', label: 'Journal Voucher', icon: <BookMarked size={18} /> },
     ],
   },
   {
-    label: 'Reports',
+    label: 'Registry',
     items: [
-      { href: '/reports/trial-balance', label: 'Trial Balance',   icon: <BarChart3 size={18} /> },
-      { href: '/reports/profit-loss',   label: 'Profit & Loss',   icon: <TrendingUp size={18} /> },
-      { href: '/reports/balance-sheet', label: 'Balance Sheet',   icon: <Users size={18} /> },
+      { href: '/vouchers', label: 'All Vouchers', icon: <FileText size={18} /> },
     ],
   },
   {
     label: 'System',
     items: [
-      { href: '/settings', label: 'Settings', icon: <Settings size={18} /> },
+      { href: '/settings', label: 'Company Settings', icon: <Settings size={18} /> },
     ],
   },
 ]
@@ -57,7 +50,8 @@ export function Sidebar() {
   const pathname = usePathname()
 
   function isActive(href: string) {
-    if (href === '/dashboard') return pathname === '/dashboard' || pathname === '/'
+    if (href === '/masters') return pathname === '/masters' || pathname === '/'
+    if (href === '/vouchers') return pathname === '/vouchers'
     return pathname.startsWith(href)
   }
 
@@ -105,8 +99,8 @@ export function Sidebar() {
       {/* Footer */}
       <div className="sidebar-footer">
         <div className="sidebar-company">
-          <span className="sidebar-company-name">My Company</span>
-          <span>Tadbeer Accounting v1.0</span>
+          <span className="sidebar-company-name">Tadbeer Transformations</span>
+          <span>Accounting MVP v1.0</span>
         </div>
       </div>
     </aside>

@@ -2,21 +2,20 @@
 import { useState, useEffect } from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { LogOut, Settings, BarChart3, BookOpen, FileText, LayoutDashboard } from 'lucide-react'
+import { LogOut, Settings, BarChart3, BookOpen, FileText, LayoutDashboard, Box, HelpCircle } from 'lucide-react'
 import { supabase as rawSupabase } from '@/lib/supabase/client'
 const supabase = rawSupabase as any
 import { useUIStore } from '@/store/ui'
 
 const NAV_ITEMS = [
-  { href: '/dashboard',             label: 'Dashboard', icon: <LayoutDashboard size={14} /> },
   { href: '/masters',               label: 'Chart of Accounts', icon: <BookOpen size={14} /> },
-  { href: '/vouchers',              label: 'Vouchers', icon: <FileText size={14} /> },
-  { href: '/reports/ledgers',       label: 'Ledger Statement', icon: <BookOpen size={14} /> },
-  { href: '/reports/payments',      label: 'Payments', icon: <FileText size={14} /> },
-  { href: '/reports/receipts',      label: 'Receipts', icon: <FileText size={14} /> },
-  { href: '/reports/trial-balance', label: 'Trial Balance', icon: <BarChart3 size={14} /> },
-  { href: '/reports/profit-loss',   label: 'P&L', icon: <BarChart3 size={14} /> },
-  { href: '/reports/balance-sheet', label: 'Balance Sheet', icon: <BarChart3 size={14} /> },
+  { href: '/items',                 label: 'Services Registry', icon: <Box size={14} /> },
+  { href: '/vouchers/sales',        label: 'Sales Voucher', icon: <FileText size={14} /> },
+  { href: '/vouchers/purchase',     label: 'Purchase Voucher', icon: <FileText size={14} /> },
+  { href: '/vouchers/payment',      label: 'Payment Voucher', icon: <FileText size={14} /> },
+  { href: '/vouchers/receipt',      label: 'Receipt Voucher', icon: <FileText size={14} /> },
+  { href: '/vouchers/journal',      label: 'Journal Voucher', icon: <FileText size={14} /> },
+  { href: '/vouchers',              label: 'Voucher Registry', icon: <FileText size={14} /> },
 ]
 
 export function TopNav() {
@@ -41,7 +40,8 @@ export function TopNav() {
       }
     }
     loadCompanies()
-  }, [activeCompanyId, setActiveCompany])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   function isActive(href: string) {
     if (href === '/dashboard') return pathname === '/dashboard' || pathname === '/'
@@ -54,26 +54,21 @@ export function TopNav() {
   const logoSub = words.slice(1).join(' ') || 'Transformations'
 
   return (
-    <header className="topnav" style={{ display: 'flex', flexDirection: 'column', height: 'auto', padding: '0.5rem 2rem' }}>
+    <header className="topnav" style={{ display: 'flex', flexDirection: 'column', height: 'auto', padding: '0.15rem 2rem 0.5rem' }}>
       <div style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: '1px solid var(--color-border-light)', paddingBottom: '0.5rem' }}>
         {/* Logo */}
-        <Link href="/dashboard" className="topnav-logo">
+        <Link href="/dashboard" className="topnav-logo" style={{ display: 'flex', alignItems: 'center' }}>
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
-            src="/logo.png"
+            src="/Logo .png"
             alt="Tadbeer"
             style={{
-              width: 44,
-              height: 44,
+              height: 84,
+              width: 'auto',
               objectFit: 'contain',
               background: 'transparent',
-              mixBlendMode: 'multiply',
             }}
           />
-          <div className="topnav-logo-text">
-            <span className="topnav-logo-name" style={{ fontSize: '1rem' }}>{logoName}</span>
-            <span className="topnav-logo-sub" style={{ fontSize: '0.55rem' }}>{logoSub}</span>
-          </div>
         </Link>
 
         {/* Center: Company Switcher */}
