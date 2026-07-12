@@ -204,7 +204,6 @@ export function PrintableVoucher({ voucher, journalLines, voucherLines = [], com
                 </td>
                 <td style={{ padding: '8px 12px', border: '1px solid #E2E8F0' }}>
                   <strong>{line.ledger?.name || '—'}</strong>
-                  <span style={{ fontSize: '0.7rem', color: '#4A5568', marginLeft: '8px' }}>({line.ledger?.classification || 'Nominal'})</span>
                 </td>
                 <td style={{ padding: '8px 12px', border: '1px solid #E2E8F0', textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>
                   {line.type === 'Dr' ? Number(line.amount).toLocaleString('en-US', { minimumFractionDigits: 2 }) : '—'}
