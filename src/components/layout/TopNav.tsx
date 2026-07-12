@@ -63,7 +63,7 @@ export function TopNav() {
             src="/Logo .png"
             alt="Tadbeer"
             style={{
-              height: 84,
+              height: 68,
               width: 'auto',
               objectFit: 'contain',
               background: 'transparent',
