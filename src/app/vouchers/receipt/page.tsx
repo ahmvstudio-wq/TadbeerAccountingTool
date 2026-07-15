@@ -1,11 +1,12 @@
 'use client'
 import { useEffect, useState, useCallback } from 'react'
-import { AlertCircle, CheckCircle, ArrowLeft } from 'lucide-react'
+import { AlertCircle, CheckCircle, ArrowLeft, Printer, RefreshCw } from 'lucide-react'
 import Link from 'next/link'
 import { supabase } from '@/lib/supabase/client'
 import { numberToWords } from '@/lib/accounting'
-import type { Ledger } from '@/lib/types'
+import type { Ledger, Voucher, JournalLine } from '@/lib/types'
 import { useUIStore } from '@/store/ui'
+import { PrintableVoucher } from '@/components/voucher/PrintableVoucher'
 
 export default function ReceiptVoucherPage() {
   const activeCompanyId = useUIStore(s => s.activeCompanyId)
@@ -16,10 +17,17 @@ export default function ReceiptVoucherPage() {
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [success, setSuccess] = useState<string | null>(null)
+  const [companySettings, setCompanySettings] = useState<any>(null)
+
+  // Success view states
+  const [postedVoucher, setPostedVoucher] = useState<Voucher | null>(null)
+  const [postedJournalLines, setPostedJournalLines] = useState<JournalLine[]>([])
+  const [loadingJournal, setLoadingJournal] = useState(false)
 
   const [date, setDate] = useState(new Date().toISOString().split('T')[0])
   const [customerId, setCustomerId] = useState('')
   const [bankCashId, setBankCashId] = useState('')
+  const [currency, setCurrency] = useState('OMR')
   const [amount, setAmount] = useState<number>(0)
   const [ref, setRef] = useState('')
   const [narration, setNarration] = useState('')
@@ -28,18 +36,30 @@ export default function ReceiptVoucherPage() {
   const [customerBalance, setCustomerBalance] = useState<{ balance: number; type: string } | null>(null)
   const [bankCashBalance, setBankCashBalance] = useState<{ balance: number; type: string } | null>(null)
 
-  const loadLedgers = useCallback(async () => {
+  const loadData = useCallback(async () => {
     setLoading(true)
-    const { data } = await (supabase as any)
-      .from('ledgers')
-      .select('*, group:groups(id, name, nature)')
-      .eq('company_id', companyId)
-      .order('name')
-    setLedgers(data ?? [])
+    try {
+      const [{ data: ledg }, { data: settings }] = await Promise.all([
+        (supabase as any)
+          .from('ledgers')
+          .select('*, group:groups(id, name, nature)')
+          .eq('company_id', companyId)
+          .order('name'),
+        (supabase as any)
+          .from('settings')
+          .select('*')
+          .eq('company_id', companyId)
+          .maybeSingle()
+      ])
+      setLedgers(ledg ?? [])
+      setCompanySettings(settings)
+    } catch (err) {
+      console.error(err)
+    }
     setLoading(false)
   }, [companyId])
 
-  useEffect(() => { loadLedgers() }, [loadLedgers])
+  useEffect(() => { loadData() }, [loadData])
 
   // Fetch balances when selections change
   useEffect(() => {
@@ -94,6 +114,7 @@ export default function ReceiptVoucherPage() {
           date,
           party_ledger_id: customerId,
           party_name: customerLedger?.name || '',
+          bank_cash_ledger_id: bankCashId,
           amount,
           subtotal: amount,
           vat_total: 0,
@@ -101,15 +122,7 @@ export default function ReceiptVoucherPage() {
           narration: narration.trim(),
           notes: ref.trim() ? `Receipt Ref: ${ref.trim()}` : null,
           company_id: companyId,
-          lines: [
-            {
-              ledger_id: bankCashId, // Receives the Debit
-              description: 'Receipt',
-              amount,
-              vat_rate: 0,
-              vat_amount: 0,
-            },
-          ],
+          currency,
         }),
       })
 
@@ -120,8 +133,20 @@ export default function ReceiptVoucherPage() {
       }
 
       const voucher = await res.json()
+      setPostedVoucher(voucher)
       setSuccess(`Receipt Voucher ${voucher.voucher_number} posted successfully!`)
       
+      // Load journal lines for printable preview
+      setLoadingJournal(true)
+      const { data: jLines } = await (supabase as any)
+        .from('journal_lines')
+        .select('*, ledger:ledgers(name, account_code, classification)')
+        .eq('voucher_id', voucher.id)
+        .order('type', { ascending: true })
+
+      setPostedJournalLines(jLines ?? [])
+      setLoadingJournal(false)
+
       // Refresh balances
       const { data: cData } = await (supabase as any).rpc('get_ledger_balance', { p_ledger_id: customerId })
       if (cData && cData.length > 0) {
@@ -144,8 +169,75 @@ export default function ReceiptVoucherPage() {
     }
   }
 
+  function handlePrint() {
+    const el = document.getElementById('printable-voucher')
+    if (!el) return
+    const win = window.open('', '_blank')
+    if (!win) return
+    win.document.write(`
+      <html><head><title>Print Receipt Voucher</title>
+      <style>
+        body { font-family: 'Inter', sans-serif; padding: 2rem; color: #1a1a1a; }
+        table { width: 100%; border-collapse: collapse; margin: 1rem 0; }
+        th, td { padding: 8px 12px; border: 1px solid #ddd; text-align: left; font-size: 0.85rem; }
+        th { background: #f8f8f8; font-weight: 600; }
+        .print-total-row { font-weight: 700; background: #f0f0f0; }
+        @media print { body { padding: 0; } }
+      </style></head><body>${el.innerHTML}</body></html>
+    `)
+    win.document.close()
+    win.print()
+  }
+
+  function startNewVoucher() {
+    setPostedVoucher(null)
+    setPostedJournalLines([])
+    setSuccess(null)
+  }
+
   if (loading) {
     return <div style={{ padding: '2rem' }}><div className="skeleton" style={{ height: 300, borderRadius: 12 }} /></div>
+  }
+
+  if (postedVoucher) {
+    return (
+      <div style={{ maxWidth: 840, margin: '0 auto', padding: '1rem 0 3rem' }}>
+        <div className="card" style={{ border: '1px solid var(--color-success)', background: 'var(--color-surface)', marginBottom: '1.5rem' }}>
+          <div className="card-body" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '1rem' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+              <div style={{ width: 40, height: 40, background: 'rgba(34,197,94,0.1)', color: '#22c55e', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <CheckCircle size={22} />
+              </div>
+              <div>
+                <h3 style={{ fontSize: '1rem', fontWeight: 700, color: 'var(--color-success)', margin: 0 }}>Receipt Voucher Posted</h3>
+                <p style={{ fontSize: '0.8rem', color: 'var(--color-text-secondary)', margin: 0 }}>Voucher Number: <strong>{postedVoucher.voucher_number}</strong></p>
+              </div>
+            </div>
+            <div style={{ display: 'flex', gap: '0.5rem' }}>
+              <button className="btn btn-teal" onClick={handlePrint} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                <Printer size={16} /> Print Receipt
+              </button>
+              <button className="btn btn-ghost" onClick={startNewVoucher} style={{ display: 'flex', alignItems: 'center', gap: 6, color: 'var(--color-teal)' }}>
+                <RefreshCw size={16} /> Post Another Receipt
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <div className="card" style={{ padding: '2.5rem', boxShadow: 'var(--shadow-lg)' }}>
+          {loadingJournal ? (
+            <div style={{ textAlign: 'center', padding: '3rem' }}>Loading receipt preview...</div>
+          ) : (
+            <PrintableVoucher 
+              voucher={postedVoucher} 
+              journalLines={postedJournalLines} 
+              companySettings={companySettings}
+              currency={postedVoucher.currency || 'OMR'}
+            />
+          )}
+        </div>
+      </div>
+    )
   }
 
   return (
@@ -168,10 +260,21 @@ export default function ReceiptVoucherPage() {
       <form onSubmit={handleSubmit}>
         <div className="card" style={{ marginTop: '1rem' }}>
           <div className="card-body">
-            <div className="form-grid form-grid-2" style={{ marginBottom: '1.5rem' }}>
+            <div className="form-grid form-grid-3" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '1rem', marginBottom: '1.5rem' }}>
               <div className="form-group">
                 <label className="form-label required">Date</label>
                 <input type="date" className="form-control" value={date} onChange={e => setDate(e.target.value)} required />
+              </div>
+              <div className="form-group">
+                <label className="form-label required">Currency</label>
+                <select className="form-control" value={currency} onChange={e => setCurrency(e.target.value)} required>
+                  <option value="OMR">OMR (Omani Rial)</option>
+                  <option value="AED">AED (UAE Dirham)</option>
+                  <option value="USD">USD (US Dollar)</option>
+                  <option value="SAR">SAR (Saudi Riyal)</option>
+                  <option value="EUR">EUR (Euro)</option>
+                  <option value="GBP">GBP (British Pound)</option>
+                </select>
               </div>
               <div className="form-group">
                 <label className="form-label required">Received In</label>
@@ -206,14 +309,14 @@ export default function ReceiptVoucherPage() {
               </div>
 
               <div className="form-group">
-                <label className="form-label required">Amount Received (OMR)</label>
-                <input type="number" step="0.01" min="0.01" className="form-control" value={amount || ''} onChange={e => setAmount(Number(e.target.value))} required />
+                <label className="form-label required">Amount Received</label>
+                <input type="number" step="0.001" min="0.001" className="form-control" value={amount || ''} onChange={e => setAmount(Number(e.target.value))} required />
               </div>
             </div>
 
             {amount > 0 && (
               <div style={{ marginBottom: '1.5rem', padding: '0.75rem 1rem', background: 'var(--color-surface-alt)', borderRadius: 'var(--radius-md)', fontSize: '0.8rem', color: 'var(--color-text-secondary)', fontStyle: 'italic' }}>
-                <strong>Amount in words:</strong> {numberToWords(amount, 'OMR')}
+                <strong>Amount in words:</strong> {numberToWords(amount, currency)}
               </div>
             )}
 

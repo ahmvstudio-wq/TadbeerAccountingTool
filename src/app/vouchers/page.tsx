@@ -156,6 +156,24 @@ export default function VouchersPage() {
     win.print()
   }
 
+  function handleWhatsApp() {
+    if (!selectedVoucher) return
+    const phone = (partyLedger?.phone || '').replace(/\D/g, '')
+    const label = selectedVoucher.type === 'SALE' ? 'Tax Invoice' : 'Voucher'
+    
+    const message = `Dear Customer / Supplier,\n\n` +
+      `Hope you are doing well.\n\n` +
+      `Please find details of your ${label} *${selectedVoucher.voucher_number}* from Tadbeer Transformations:\n` +
+      `• Date: ${new Date(selectedVoucher.date).toLocaleDateString('en-GB')}\n` +
+      `• Total Amount: *OMR ${Number(selectedVoucher.grand_total || selectedVoucher.amount).toFixed(3)}*\n\n` +
+      `Thank you!\n\n` +
+      `Tadbeer Transformations`;
+      
+    const encodedText = encodeURIComponent(message)
+    const waUrl = phone ? `https://wa.me/${phone}?text=${encodedText}` : `https://api.whatsapp.com/send?text=${encodedText}`
+    window.open(waUrl, '_blank')
+  }
+
   async function handleEmail() {
     if (!selectedVoucher) return
     const emailTo = partyLedger?.email || ''

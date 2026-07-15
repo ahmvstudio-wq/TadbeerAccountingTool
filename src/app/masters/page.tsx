@@ -1,5 +1,6 @@
 'use client'
-import { useEffect, useState, useCallback } from 'react'
+import React, { useEffect, useState, useCallback } from 'react'
+import Link from 'next/link'
 import { Plus, ChevronDown, ChevronRight, Pencil, Trash2, AlertCircle, X, UserPlus, UserCheck } from 'lucide-react'
 import { supabase } from '@/lib/supabase/client'
 import type { Group, Ledger, Nature } from '@/lib/types'
@@ -44,6 +45,7 @@ const ledgerSchema = z.object({
   vat_number:      z.string().optional(),
   country:         z.string().optional(),
   address:         z.string().optional(),
+  expense_category: z.string().optional(),
 })
 
 type GroupForm  = z.infer<typeof groupSchema>
@@ -305,10 +307,12 @@ function GroupNode({
                 {ledgers.map(ledger => (
                   <div key={ledger.id} className="tree-ledger-item">
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-                      <strong style={{ color: 'var(--color-gold-dark)', fontSize: '0.8rem' }}>
-                        [{ledger.account_code}]
-                      </strong>
-                      <span style={{ fontSize: '0.9rem', fontWeight: 500 }}>{ledger.name}</span>
+                      <Link href={`/reports/ledgers?ledger_id=${ledger.id}`} style={{ display: 'inline-flex', gap: 8, textDecoration: 'none', color: 'inherit' }} title="Click to view ledger breakdown">
+                        <strong style={{ color: 'var(--color-gold-dark)', fontSize: '0.8rem', cursor: 'pointer' }}>
+                          [{ledger.account_code}]
+                        </strong>
+                        <span style={{ fontSize: '0.9rem', fontWeight: 500, cursor: 'pointer', textDecoration: 'underline' }}>{ledger.name}</span>
+                      </Link>
                       {Number(ledger.opening_balance) > 0 && (
                         <span className="text-muted text-xs">
                           (Start: {Number(ledger.opening_balance).toLocaleString('en-US', { minimumFractionDigits: 3 })} {ledger.opening_type})
@@ -401,10 +405,12 @@ function GroupNode({
             <div key={ledger.id} className="tree-connector-line">
               <div className="tree-ledger-item">
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-                  <strong style={{ color: 'var(--color-gold-dark)', fontSize: '0.75rem' }}>
-                    [{ledger.account_code}]
-                  </strong>
-                  <span style={{ fontSize: '0.85rem' }}>{ledger.name}</span>
+                  <Link href={`/reports/ledgers?ledger_id=${ledger.id}`} style={{ display: 'inline-flex', gap: 8, textDecoration: 'none', color: 'inherit' }} title="Click to view ledger breakdown">
+                    <strong style={{ color: 'var(--color-gold-dark)', fontSize: '0.75rem', cursor: 'pointer' }}>
+                      [{ledger.account_code}]
+                    </strong>
+                    <span style={{ fontSize: '0.85rem', cursor: 'pointer', textDecoration: 'underline' }}>{ledger.name}</span>
+                  </Link>
                   {Number(ledger.opening_balance) > 0 && (
                     <span className="text-muted text-xs">
                       (Start: {Number(ledger.opening_balance).toLocaleString('en-US', { minimumFractionDigits: 3 })} {ledger.opening_type})
@@ -449,7 +455,7 @@ function GroupFormModal({ groups, companyId, groupToEdit, onClose, onSaved }: {
   onSaved: () => void
 }) {
   const [apiError, setApiError] = useState<string | null>(null)
-  const { register, handleSubmit, formState: { errors, isSubmitting } } = useForm<GroupForm>({
+  const { register, handleSubmit, watch, formState: { errors, isSubmitting } } = useForm<GroupForm>({
     resolver: zodResolver(groupSchema),
     defaultValues: groupToEdit ? {
       name: groupToEdit.name,
@@ -487,35 +493,60 @@ function GroupFormModal({ groups, companyId, groupToEdit, onClose, onSaved }: {
     }
   }
 
-  const parentCandidates = groups.filter(g => !groupToEdit || g.id !== groupToEdit.id)
+  const selectedNature = watch('nature')
+
+  // Only allow parents with the same nature (no cross-nature nesting)
+  // Exclude the group being edited itself to prevent self-parenting
+  const sameNatureCandidates = groups.filter(g =>
+    g.nature === selectedNature &&
+    (!groupToEdit || g.id !== groupToEdit.id)
+  )
+
+  // Build indented display for parent dropdown showing hierarchy
+  function buildParentOptions(parentId: string | null | undefined, depth: number): React.ReactNode[] {
+    const children = sameNatureCandidates.filter(g => (g.parent_id ?? null) === (parentId ?? null))
+    return children.flatMap(g => [
+      <option key={g.id} value={g.id}>
+        {'\u3000'.repeat(depth)}{depth > 0 ? '\u2514 ' : ''}{g.name}
+      </option>,
+      ...buildParentOptions(g.id, depth + 1)
+    ])
+  }
+
+  const NATURE_DESCRIPTIONS: Record<string, string> = {
+    ASSET:     'Things the business owns — cash, receivables, inventory, fixed assets',
+    LIABILITY: 'Amounts the business owes — loans, payables, accruals',
+    INCOME:    'Revenue earned — sales, service fees, commission income',
+    EXPENSE:   'Money spent on operations — salaries, rent, utilities, COGS',
+    EQUITY:    'Owner\'s stake — capital contributed, retained earnings',
+  }
 
   return (
     <div className="modal-overlay" onClick={onClose}>
       <div className="modal" onClick={e => e.stopPropagation()}>
         <div className="modal-header">
-          <span className="modal-title">{groupToEdit ? 'Edit Folder Settings' : 'Create New Folder'}</span>
+          <span className="modal-title">{groupToEdit ? 'Edit Group Settings' : 'Create New Account Group'}</span>
           <button className="modal-close" onClick={onClose}><X size={18} /></button>
         </div>
         <form onSubmit={handleSubmit(onSubmit)}>
-          <div className="modal-body">
+          <div className="modal-body" style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
             {apiError && (
-              <div className="alert alert-danger" style={{ marginBottom: '1.25rem', fontSize: '0.85rem' }}>
+              <div className="alert alert-danger" style={{ marginBottom: '0.5rem', fontSize: '0.85rem' }}>
                 <AlertCircle size={16} style={{ flexShrink: 0 }} />
                 <span>{apiError}</span>
               </div>
             )}
+
             <div className="form-group">
-              <label className="form-label required">Folder / Category Name</label>
-              <input className={`form-control ${errors.name ? 'error' : ''}`} {...register('name')} placeholder="e.g. Office Supplies" />
+              <label className="form-label required">Group / Folder Name</label>
+              <input
+                className={`form-control ${errors.name ? 'error' : ''}`}
+                {...register('name')}
+                placeholder="e.g. Office Expenses, Fixed Assets, Bank Loans"
+              />
               {errors.name && <span className="form-error">{errors.name.message}</span>}
             </div>
-            <div className="form-group">
-              <label className="form-label">Parent Group (optional)</label>
-              <select className="form-control" {...register('parent_id')}>
-                <option value="">— None (Root Group) —</option>
-                {parentCandidates.map(g => <option key={g.id} value={g.id}>{g.name}</option>)}
-              </select>
-            </div>
+
             <div className="form-group">
               <label className="form-label required">Nature</label>
               <select className={`form-control ${errors.nature ? 'error' : ''}`} {...register('nature')}>
@@ -525,12 +556,32 @@ function GroupFormModal({ groups, companyId, groupToEdit, onClose, onSaved }: {
                 <option value="EXPENSE">Money Spent (Expense)</option>
                 <option value="EQUITY">Owner Capital (Equity)</option>
               </select>
+              {selectedNature && (
+                <span style={{ fontSize: '0.72rem', color: 'var(--color-text-secondary)', marginTop: 4, display: 'block' }}>
+                  {NATURE_DESCRIPTIONS[selectedNature]}
+                </span>
+              )}
+              {errors.nature && <span className="form-error">{errors.nature.message}</span>}
+            </div>
+
+            <div className="form-group">
+              <label className="form-label">
+                Parent Group{' '}
+                <span style={{ fontWeight: 400, color: 'var(--color-text-muted)' }}>(optional — leave blank for top-level)</span>
+              </label>
+              <select className="form-control" {...register('parent_id')}>
+                <option value="">— Root Level ({selectedNature ? NATURE_LABELS[selectedNature as Nature] : 'Group'}) —</option>
+                {buildParentOptions(null, 0)}
+              </select>
+              <span style={{ fontSize: '0.72rem', color: 'var(--color-text-muted)', marginTop: 4, display: 'block' }}>
+                Only shows existing groups of the same nature selected above.
+              </span>
             </div>
           </div>
           <div className="modal-footer">
             <button type="button" className="btn btn-outline" onClick={onClose}>Cancel</button>
             <button type="submit" className="btn btn-primary" disabled={isSubmitting}>
-              {isSubmitting ? 'Saving...' : 'Save Settings'}
+              {isSubmitting ? 'Saving...' : (groupToEdit ? 'Update Group' : 'Create Group')}
             </button>
           </div>
         </form>
@@ -548,37 +599,72 @@ function LedgerFormModal({ groups, companyId, ledgerToEdit, onClose, onSaved }: 
   onSaved: () => void
 }) {
   const [apiError, setApiError] = useState<string | null>(null)
-  const { register, handleSubmit, formState: { errors, isSubmitting } } = useForm<LedgerForm>({
+
+  // Parse description for category (Direct/Indirect expense prefix)
+  let defaultCategory = ''
+  let defaultDesc = ledgerToEdit?.description || ''
+  if (ledgerToEdit?.description) {
+    const match = ledgerToEdit.description.match(/^\[(Direct|Indirect)\]\s*(.*)$/)
+    if (match) {
+      defaultCategory = match[1]
+      defaultDesc = match[2]
+    }
+  }
+
+  const { register, handleSubmit, watch, formState: { errors, isSubmitting } } = useForm<LedgerForm>({
     resolver: zodResolver(ledgerSchema) as any,
     defaultValues: ledgerToEdit ? {
       name: ledgerToEdit.name,
       group_id: ledgerToEdit.group_id,
       opening_balance: ledgerToEdit.opening_balance,
-      description: ledgerToEdit.description || '',
+      description: defaultDesc,
       classification: ledgerToEdit.classification || 'Nominal',
       phone: ledgerToEdit.phone || '',
       email: ledgerToEdit.email || '',
       vat_number: ledgerToEdit.vat_number || '',
       country: ledgerToEdit.country || 'Oman',
       address: ledgerToEdit.address || '',
-    } : { opening_balance: 0, classification: 'Nominal', country: 'Oman' },
+      expense_category: defaultCategory || '',
+    } : { opening_balance: 0, classification: 'Nominal', country: 'Oman', expense_category: '' },
   })
+
+  const selectedGroupId = watch('group_id')
+  const selectedGroup = groups.find(g => g.id === selectedGroupId)
+
+  // Derive classification automatically from group nature — not user-editable
+  function deriveClassification(nature?: string): 'Personal' | 'Real' | 'Nominal' {
+    if (nature === 'EXPENSE' || nature === 'INCOME') return 'Nominal'
+    if (nature === 'LIABILITY' || nature === 'EQUITY') return 'Personal'
+    return 'Real' // ASSET default — cash, bank, stock, fixed assets
+  }
+
+
+  // Show contact fields only for party accounts (customers, suppliers, banks, capital)
+  const isPartyAccount = selectedGroup?.nature === 'ASSET' || selectedGroup?.nature === 'LIABILITY' || selectedGroup?.nature === 'EQUITY'
+  const isExpenseAccount = selectedGroup?.nature === 'EXPENSE'
 
   async function onSubmit(data: LedgerForm) {
     setApiError(null)
     const isEdit = !!ledgerToEdit
     const url = '/api/ledgers'
     const method = isEdit ? 'PUT' : 'POST'
-    
-    // Auto-infer Dr/Cr type from balance sign:
-    // Positive balance = Dr, Negative balance = Cr
+
     const sign = Number(data.opening_balance) < 0 ? 'Cr' : 'Dr'
     const absVal = Math.abs(Number(data.opening_balance))
 
+    const finalDesc = isExpenseAccount && data.expense_category
+      ? `[${data.expense_category}] ${data.description || ''}`
+      : data.description || ''
+
+    const { expense_category, ...submitData } = data as any
+    const autoClassification = deriveClassification(selectedGroup?.nature)
+
     const payload = {
-      ...data,
+      ...submitData,
+      description: finalDesc,
       opening_balance: absVal,
       opening_type: sign,
+      classification: autoClassification,
       id: ledgerToEdit?.id,
       company_id: companyId,
     }
@@ -600,11 +686,27 @@ function LedgerFormModal({ groups, companyId, ledgerToEdit, onClose, onSaved }: 
     }
   }
 
+  // Group the groups by nature for the optgroup dropdown
+  const NATURE_ORDER: Nature[] = ['ASSET', 'LIABILITY', 'INCOME', 'EXPENSE', 'EQUITY']
+  const groupsByNature = NATURE_ORDER.reduce((acc, nat) => {
+    acc[nat] = groups.filter(g => g.nature === nat)
+    return acc
+  }, {} as Record<Nature, Group[]>)
+
+  // Nature badge color
+  const NATURE_CHIP: Record<string, { bg: string; color: string; label: string }> = {
+    ASSET:     { bg: 'var(--color-teal-pale)',    color: 'var(--color-teal)',          label: 'Asset' },
+    LIABILITY: { bg: 'var(--color-warning-pale)', color: 'var(--color-warning-dark)',  label: 'Liability' },
+    INCOME:    { bg: 'var(--color-success-pale)', color: 'var(--color-success-dark)',  label: 'Income' },
+    EXPENSE:   { bg: 'var(--color-danger-pale)',  color: 'var(--color-danger-dark)',   label: 'Expense' },
+    EQUITY:    { bg: 'var(--color-gold-pale)',    color: 'var(--color-gold-dark)',      label: 'Equity' },
+  }
+
   return (
     <div className="modal-overlay" onClick={onClose}>
       <div className="modal" onClick={e => e.stopPropagation()} style={{ maxWidth: 640 }}>
         <div className="modal-header">
-          <span className="modal-title">{ledgerToEdit ? 'Edit Account Settings' : 'Create New Account'}</span>
+          <span className="modal-title">{ledgerToEdit ? 'Edit Account Ledger' : 'Add Account Ledger'}</span>
           <button className="modal-close" onClick={onClose}><X size={18} /></button>
         </div>
         <form onSubmit={handleSubmit(onSubmit)}>
@@ -615,85 +717,148 @@ function LedgerFormModal({ groups, companyId, ledgerToEdit, onClose, onSaved }: 
                 <span>{apiError}</span>
               </div>
             )}
-            
-            <div className="form-grid form-grid-2">
-              <div className="form-group">
-                <label className="form-label required">Account Name</label>
-                <input className={`form-control ${errors.name ? 'error' : ''}`} {...register('name')} placeholder="e.g. Bank Muscat" />
-                {errors.name && <span className="form-error">{errors.name.message}</span>}
-              </div>
-              <div className="form-group">
-                <label className="form-label required">Under Group / Folder</label>
-                <select className={`form-control ${errors.group_id ? 'error' : ''}`} {...register('group_id')}>
-                  <option value="">— Select Group —</option>
-                  {groups.map(g => <option key={g.id} value={g.id}>{g.name}</option>)}
-                </select>
-                {errors.group_id && <span className="form-error">{errors.group_id.message}</span>}
-              </div>
+
+            {/* Row 1: Account Name */}
+            <div className="form-group">
+              <label className="form-label required">Account Name</label>
+              <input
+                className={`form-control ${errors.name ? 'error' : ''}`}
+                {...register('name')}
+                placeholder="e.g. Bank Muscat, Office Rent, Sales Revenue"
+              />
+              {errors.name && <span className="form-error">{errors.name.message}</span>}
             </div>
 
-            <div className="form-grid form-grid-2">
+            {/* Row 2: Under Group */}
+            <div className="form-group">
+              <label className="form-label required">Under Group / Folder</label>
+              <select className={`form-control ${errors.group_id ? 'error' : ''}`} {...register('group_id')}>
+                <option value="">— Select a Group —</option>
+                {NATURE_ORDER.map(nat => groupsByNature[nat].length > 0 && (
+                  <optgroup key={nat} label={`── ${NATURE_LABELS[nat]} ──`}>
+                    {groupsByNature[nat].map(g => (
+                      <option key={g.id} value={g.id}>{g.name}</option>
+                    ))}
+                  </optgroup>
+                ))}
+              </select>
+              {selectedGroup && NATURE_CHIP[selectedGroup.nature] && (
+                <span style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: 4,
+                  marginTop: 6,
+                  padding: '2px 10px',
+                  borderRadius: 20,
+                  fontSize: '0.72rem',
+                  fontWeight: 600,
+                  background: NATURE_CHIP[selectedGroup.nature].bg,
+                  color: NATURE_CHIP[selectedGroup.nature].color,
+                }}>
+                  {NATURE_CHIP[selectedGroup.nature].label} account
+                </span>
+              )}
+              {errors.group_id && <span className="form-error">{errors.group_id.message}</span>}
+            </div>
+
+            {/* Row 3: Opening Balance (full width) */}
+            <div className="form-group">
+              <label className="form-label">Opening Balance (OMR)</label>
+              <input
+                type="number"
+                step="0.001"
+                className="form-control"
+                placeholder="0.000"
+                {...register('opening_balance')}
+              />
+              <span style={{ fontSize: '0.7rem', color: 'var(--color-text-muted)', marginTop: 4, display: 'block' }}>
+                Positive = Dr (Assets / Expenses) · Negative = Cr (Liabilities / Income)
+              </span>
+            </div>
+
+            {/* Expense Direct / Indirect — only for EXPENSE groups */}
+            {isExpenseAccount && (
               <div className="form-group">
-                <label className="form-label">Starting Balance</label>
-                <input type="number" step="0.001" className="form-control" placeholder="Positive for Debit (Dr), Negative for Credit (Cr)" {...register('opening_balance')} />
-                <span style={{ fontSize: '0.7rem', color: 'var(--color-text-muted)' }}>
-                  Use negative values for Cr balance (e.g. Loans, Payables, Capital).
+                <label className="form-label required">Expense Type</label>
+                <select className="form-control" {...register('expense_category')} required>
+                  <option value="">— Select Expense Type —</option>
+                  <option value="Direct">Direct Expense (COGS, Direct Labour, Raw Materials)</option>
+                  <option value="Indirect">Indirect Expense (Rent, Utilities, Admin Salaries)</option>
+                </select>
+                <span style={{ fontSize: '0.7rem', color: 'var(--color-text-secondary)', marginTop: 4, display: 'block' }}>
+                  Direct expenses affect <strong>Gross Profit</strong>. Indirect expenses affect <strong>Net Profit</strong>.
                 </span>
               </div>
-              <div className="form-group">
-                <label className="form-label required">Classification</label>
-                <select className="form-control" {...register('classification')}>
-                  <option value="Personal">Personal (Customer, Supplier, Bank, Capital)</option>
-                  <option value="Real">Real (Cash, Stock, Fixed Assets)</option>
-                  <option value="Nominal">Nominal (Incomes & Expenses)</option>
-                </select>
-              </div>
-            </div>
+            )}
 
+            {/* Account Code — read only */}
             <div className="form-group">
               <label className="form-label">Account Code</label>
-              <input className="form-control" disabled value={ledgerToEdit?.account_code || 'Auto-generated on save'} style={{ background: 'var(--color-surface-alt)', cursor: 'not-allowed' }} />
+              <input
+                className="form-control"
+                disabled
+                value={ledgerToEdit?.account_code || 'Auto-generated on save'}
+                style={{ background: 'var(--color-surface-alt)', cursor: 'not-allowed', fontFamily: 'monospace' }}
+              />
             </div>
 
-            <hr style={{ border: 'none', borderTop: '1px solid var(--color-border)', margin: '0.5rem 0' }} />
-            <h4 style={{ fontSize: '0.85rem', fontWeight: 700, margin: 0 }}>Contact Details (Customers / Suppliers / Banks)</h4>
-
-            <div className="form-grid form-grid-2">
-              <div className="form-group">
-                <label className="form-label">Phone Number</label>
-                <input className="form-control" {...register('phone')} placeholder="+968 1234 5678" />
-              </div>
-              <div className="form-group">
-                <label className="form-label">Email Address</label>
-                <input type="email" className="form-control" {...register('email')} placeholder="billing@company.com" />
-              </div>
-            </div>
-
-            <div className="form-grid form-grid-2">
-              <div className="form-group">
-                <label className="form-label">VAT Identification Number</label>
-                <input className="form-control" {...register('vat_number')} placeholder="OM123456789" />
-              </div>
-              <div className="form-group">
-                <label className="form-label">Country</label>
-                <input className="form-control" {...register('country')} placeholder="Oman" />
-              </div>
-            </div>
-
-            <div className="form-group">
-              <label className="form-label">Full Address</label>
-              <textarea className="form-control" {...register('address')} placeholder="Building, Street, City, ZIP Code" style={{ height: 48, paddingTop: 8 }} />
-            </div>
-
+            {/* Description */}
             <div className="form-group">
               <label className="form-label">Description / Remarks</label>
-              <textarea className="form-control" {...register('description')} placeholder="Add descriptive notes..." style={{ height: 48, paddingTop: 8 }} />
+              <textarea
+                className="form-control"
+                {...register('description')}
+                placeholder="Optional notes about this account..."
+                style={{ height: 52, paddingTop: 8 }}
+              />
             </div>
+
+            {/* Contact Details — only for party accounts (Asset / Liability / Equity) */}
+            {isPartyAccount && (
+              <>
+                <hr style={{ border: 'none', borderTop: '1px solid var(--color-border)', margin: '0.25rem 0' }} />
+                <h4 style={{ fontSize: '0.82rem', fontWeight: 700, margin: 0, color: 'var(--color-text-secondary)' }}>
+                  Contact Details <span style={{ fontWeight: 400 }}>(for Customers / Suppliers / Banks)</span>
+                </h4>
+
+                <div className="form-grid form-grid-2">
+                  <div className="form-group">
+                    <label className="form-label">Phone Number</label>
+                    <input className="form-control" {...register('phone')} placeholder="+968 1234 5678" />
+                  </div>
+                  <div className="form-group">
+                    <label className="form-label">Email Address</label>
+                    <input type="email" className="form-control" {...register('email')} placeholder="billing@company.com" />
+                  </div>
+                </div>
+
+                <div className="form-grid form-grid-2">
+                  <div className="form-group">
+                    <label className="form-label">VAT / TRN Number</label>
+                    <input className="form-control" {...register('vat_number')} placeholder="OM123456789" />
+                  </div>
+                  <div className="form-group">
+                    <label className="form-label">Country</label>
+                    <input className="form-control" {...register('country')} placeholder="Oman" />
+                  </div>
+                </div>
+
+                <div className="form-group">
+                  <label className="form-label">Full Address</label>
+                  <textarea
+                    className="form-control"
+                    {...register('address')}
+                    placeholder="Building, Street, City, ZIP Code"
+                    style={{ height: 52, paddingTop: 8 }}
+                  />
+                </div>
+              </>
+            )}
           </div>
           <div className="modal-footer">
             <button type="button" className="btn btn-outline" onClick={onClose}>Cancel</button>
             <button type="submit" className="btn btn-primary" disabled={isSubmitting}>
-              {isSubmitting ? 'Saving...' : 'Save Settings'}
+              {isSubmitting ? 'Saving...' : (ledgerToEdit ? 'Update Account' : 'Create Account')}
             </button>
           </div>
         </form>

@@ -204,6 +204,7 @@ export function PageTabs({
 export function SubNav() {
   const pathname = usePathname()
   const REPORT_TABS = [
+    { href: '/reports/ledgers',       label: 'General Ledger' },
     { href: '/reports/trial-balance', label: 'Trial Balance' },
     { href: '/reports/profit-loss',   label: 'Profit & Loss' },
     { href: '/reports/balance-sheet', label: 'Balance Sheet' },

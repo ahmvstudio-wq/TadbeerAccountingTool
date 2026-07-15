@@ -1,11 +1,12 @@
 'use client'
 import { useEffect, useState, useCallback } from 'react'
-import { Plus, Trash2, AlertCircle, CheckCircle, ArrowLeft, Scale } from 'lucide-react'
+import { Plus, Trash2, AlertCircle, CheckCircle, ArrowLeft, Scale, Printer, Mail, RefreshCw } from 'lucide-react'
 import Link from 'next/link'
 import { supabase } from '@/lib/supabase/client'
 import { numberToWords } from '@/lib/accounting'
-import type { Ledger, EntryType } from '@/lib/types'
+import type { Ledger, EntryType, Voucher, JournalLine as DBJournalLine } from '@/lib/types'
 import { useUIStore } from '@/store/ui'
+import { PrintableVoucher } from '@/components/voucher/PrintableVoucher'
 
 interface JournalLine {
   ledger_id: string
@@ -22,29 +23,48 @@ export default function JournalVoucherPage() {
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [success, setSuccess] = useState<string | null>(null)
+  const [companySettings, setCompanySettings] = useState<any>(null)
+
+  // Success view states
+  const [postedVoucher, setPostedVoucher] = useState<Voucher | null>(null)
+  const [postedJournalLines, setPostedJournalLines] = useState<any[]>([])
+  const [loadingJournal, setLoadingJournal] = useState(false)
 
   const [date, setDate] = useState(new Date().toISOString().split('T')[0])
+  const [currency, setCurrency] = useState('OMR')
   const [narration, setNarration] = useState('')
   const [lines, setLines] = useState<JournalLine[]>([
     { ledger_id: '', type: 'Dr', amount: 0 },
     { ledger_id: '', type: 'Cr', amount: 0 },
   ])
 
-  const loadLedgers = useCallback(async () => {
+  const loadData = useCallback(async () => {
     setLoading(true)
-    const { data } = await (supabase as any)
-      .from('ledgers')
-      .select('*, group:groups(id, name, nature)')
-      .eq('company_id', companyId)
-      .order('name')
-    setLedgers(data ?? [])
+    try {
+      const [{ data: ledg }, { data: settings }] = await Promise.all([
+        (supabase as any)
+          .from('ledgers')
+          .select('*, group:groups(id, name, nature)')
+          .eq('company_id', companyId)
+          .order('name'),
+        (supabase as any)
+          .from('settings')
+          .select('*')
+          .eq('company_id', companyId)
+          .maybeSingle()
+      ])
+      setLedgers(ledg ?? [])
+      setCompanySettings(settings)
+    } catch (err) {
+      console.error(err)
+    }
     setLoading(false)
   }, [companyId])
 
-  useEffect(() => { loadLedgers() }, [loadLedgers])
+  useEffect(() => { loadData() }, [loadData])
 
-  const totalDr = lines.filter(l => l.type === 'Dr').reduce((s, l) => s + Number(l.amount || 0), 0)
-  const totalCr = lines.filter(l => l.type === 'Cr').reduce((s, l) => s + Number(l.amount || 0), 0)
+  const totalDr = lines.filter(l => l.type === 'Dr').reduce((s, l) => s + (parseFloat(String(l.amount)) || 0), 0)
+  const totalCr = lines.filter(l => l.type === 'Cr').reduce((s, l) => s + (parseFloat(String(l.amount)) || 0), 0)
   const isBalanced = Math.abs(totalDr - totalCr) < 0.01 && totalDr > 0
 
   function updateLine(idx: number, field: keyof JournalLine, value: any) {
@@ -70,8 +90,12 @@ export default function JournalVoucherPage() {
     setSuccess(null)
 
     if (!narration.trim()) { setError('Narration is required.'); return }
-    if (lines.some(l => !l.ledger_id || l.amount <= 0)) { setError('All lines must have an account and positive amount.'); return }
-    if (!isBalanced) { setError('Total Debits must equal Total Credits.'); return }
+    const parsedLines = lines.map(l => ({ ...l, amount: parseFloat(String(l.amount)) || 0 }))
+    if (parsedLines.some(l => !l.ledger_id)) { setError('All lines must have an account selected.'); return }
+    if (parsedLines.some(l => l.amount <= 0)) { setError('All lines must have a positive amount.'); return }
+    const pDrTotal = parsedLines.filter(l => l.type === 'Dr').reduce((s, l) => s + l.amount, 0)
+    const pCrTotal = parsedLines.filter(l => l.type === 'Cr').reduce((s, l) => s + l.amount, 0)
+    if (Math.abs(pDrTotal - pCrTotal) >= 0.01 || pDrTotal <= 0) { setError(`Total Debits (${pDrTotal.toFixed(3)}) must equal Total Credits (${pCrTotal.toFixed(3)}).`); return }
 
     setSaving(true)
     try {
@@ -81,13 +105,14 @@ export default function JournalVoucherPage() {
         body: JSON.stringify({
           type: 'JOURNAL',
           date,
-          amount: totalDr,
-          grand_total: totalDr,
-          subtotal: totalDr,
+          amount: pDrTotal,
+          grand_total: pDrTotal,
+          subtotal: pDrTotal,
           vat_total: 0,
           narration: narration.trim(),
           company_id: companyId,
-          journal_lines: lines.map(l => ({
+          currency,
+          journal_lines: parsedLines.map(l => ({
             ledger_id: l.ledger_id,
             type: l.type,
             amount: l.amount,
@@ -102,7 +127,20 @@ export default function JournalVoucherPage() {
       }
 
       const voucher = await res.json()
+      setPostedVoucher(voucher)
       setSuccess(`Journal Voucher ${voucher.voucher_number} posted successfully!`)
+      
+      // Load journal lines for printable preview
+      setLoadingJournal(true)
+      const { data: jLines } = await (supabase as any)
+        .from('journal_lines')
+        .select('*, ledger:ledgers(name, account_code, classification)')
+        .eq('voucher_id', voucher.id)
+        .order('type', { ascending: true })
+
+      setPostedJournalLines(jLines ?? [])
+      setLoadingJournal(false)
+
       setNarration('')
       setLines([
         { ledger_id: '', type: 'Dr', amount: 0 },
@@ -115,8 +153,139 @@ export default function JournalVoucherPage() {
     }
   }
 
+  function handlePrint() {
+    const el = document.getElementById('printable-voucher')
+    if (!el) return
+    const win = window.open('', '_blank')
+    if (!win) return
+    win.document.write(`
+      <html><head><title>Print Journal Voucher</title>
+      <style>
+        body { font-family: 'Inter', sans-serif; padding: 2rem; color: #1a1a1a; }
+        table { width: 100%; border-collapse: collapse; margin: 1rem 0; }
+        th, td { padding: 8px 12px; border: 1px solid #ddd; text-align: left; font-size: 0.85rem; }
+        th { background: #f8f8f8; font-weight: 600; }
+        .print-header { display: flex; justify-content: space-between; margin-bottom: 1rem; }
+        .print-company-name { font-size: 1.3rem; font-weight: 700; }
+        .print-voucher-title { font-size: 1.1rem; font-weight: 700; text-transform: uppercase; }
+        .print-total-row { font-weight: 700; background: #f0f0f0; }
+        .print-signature-section { display: flex; justify-content: space-between; margin-top: 3rem; }
+        .print-signature-box { text-align: center; width: 22%; }
+        .print-signature-line { border-top: 1px solid #333; margin-bottom: 4px; }
+        .print-divider { border: none; border-top: 2px solid #333; margin: 1rem 0; }
+        @media print { body { padding: 0; } }
+      </style></head><body>${el.innerHTML}</body></html>
+    `)
+    win.document.close()
+    win.print()
+  }
+
+  async function handleEmail() {
+    if (!postedVoucher) return
+    setSuccess('Generating PDF and loading Gmail client...')
+
+    const loadHtml2Pdf = () => {
+      return new Promise((resolve) => {
+        if ((window as any).html2pdf) {
+          resolve((window as any).html2pdf)
+          return
+        }
+        const script = document.createElement('script')
+        script.src = 'https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js'
+        script.onload = () => resolve((window as any).html2pdf)
+        document.head.appendChild(script)
+      })
+    }
+
+    try {
+      const html2pdf: any = await loadHtml2Pdf()
+      const element = document.getElementById('printable-voucher')
+      if (element) {
+        const opt = {
+          margin:       0.3,
+          filename:     `Journal-${postedVoucher.voucher_number}.pdf`,
+          image:        { type: 'jpeg', quality: 0.98 },
+          html2canvas:  { scale: 2, useCORS: true },
+          jsPDF:        { unit: 'in', format: 'letter', orientation: 'portrait' }
+        }
+        await html2pdf().set(opt).from(element).save()
+      }
+    } catch (pdfErr) {
+      console.error('Failed to generate PDF download:', pdfErr)
+    }
+    
+    const emailBody = `Dear Accountant,\n\n` +
+      `Please find attached Journal Voucher ${postedVoucher.voucher_number} from Tadbeer Transformations.\n\n` +
+      `Thank you!\n\n` +
+      `Tadbeer Transformations`;
+
+    const subject = encodeURIComponent(`Journal Voucher ${postedVoucher.voucher_number} — Tadbeer Transformations`);
+    const body = encodeURIComponent(emailBody);
+    const gmailUrl = `https://mail.google.com/mail/?view=cm&fs=1&su=${subject}&body=${body}`;
+    
+    setSuccess(`Voucher posted & PDF downloaded successfully! Please attach the downloaded file to the pre-filled Gmail window.`);
+    try {
+      window.open(gmailUrl, '_blank');
+    } catch {
+      window.location.href = `mailto:?subject=${subject}&body=${body}`;
+    }
+  }
+
+  function startNewVoucher() {
+    setPostedVoucher(null)
+    setPostedJournalLines([])
+    setSuccess(null)
+  }
+
   if (loading) {
     return <div style={{ padding: '2rem' }}><div className="skeleton" style={{ height: 300, borderRadius: 12 }} /></div>
+  }
+
+  // Success view with Printable Preview
+  if (postedVoucher) {
+    return (
+      <div style={{ maxWidth: 840, margin: '0 auto', padding: '1rem 0 3rem' }}>
+        <div className="card" style={{ border: '1px solid var(--color-success)', background: 'var(--color-surface)', marginBottom: '1.5rem' }}>
+          <div className="card-body" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '1rem' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+              <div style={{ width: 40, height: 40, background: 'rgba(34,197,94,0.1)', color: '#22c55e', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <CheckCircle size={22} />
+              </div>
+              <div>
+                <h3 style={{ fontSize: '1rem', fontWeight: 700, color: 'var(--color-success)', margin: 0 }}>Journal Voucher Posted</h3>
+                <p style={{ fontSize: '0.8rem', color: 'var(--color-text-secondary)', margin: 0 }}>Voucher Number: <strong>{postedVoucher.voucher_number}</strong></p>
+              </div>
+            </div>
+            
+            <div style={{ display: 'flex', gap: '0.5rem' }}>
+              <button className="btn btn-primary" onClick={handlePrint} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                <Printer size={16} /> Print Voucher
+              </button>
+              <button className="btn btn-outline" onClick={handleEmail} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                <Mail size={16} /> Email PDF
+              </button>
+              <button className="btn btn-ghost" onClick={startNewVoucher} style={{ display: 'flex', alignItems: 'center', gap: 6, color: 'var(--color-teal)' }}>
+                <RefreshCw size={16} /> Post Another JV
+              </button>
+            </div>
+          </div>
+        </div>
+
+        {/* Printable Card Preview */}
+        <div className="card" style={{ padding: '2.5rem', boxShadow: 'var(--shadow-lg)' }}>
+          {loadingJournal ? (
+            <div style={{ textAlign: 'center', padding: '3rem' }}>Loading preview...</div>
+          ) : (
+            <PrintableVoucher 
+              voucher={postedVoucher} 
+              journalLines={postedJournalLines} 
+              companySettings={companySettings} 
+              currency={postedVoucher.currency || 'OMR'}
+            />
+          )}
+        </div>
+      </div>
+    )
   }
 
   const drLines = lines.map((l, i) => ({ ...l, origIdx: i })).filter(l => l.type === 'Dr')
@@ -142,9 +311,22 @@ export default function JournalVoucherPage() {
       <form onSubmit={handleSubmit}>
         <div className="card" style={{ marginTop: '1rem' }}>
           <div className="card-body">
-            <div className="form-group" style={{ maxWidth: 300, marginBottom: '1.5rem' }}>
-              <label className="form-label required">Date</label>
-              <input type="date" className="form-control" value={date} onChange={e => setDate(e.target.value)} required />
+            <div className="form-grid form-grid-2" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', marginBottom: '1.5rem' }}>
+              <div className="form-group">
+                <label className="form-label required">Date</label>
+                <input type="date" className="form-control" value={date} onChange={e => setDate(e.target.value)} required />
+              </div>
+              <div className="form-group">
+                <label className="form-label required">Currency</label>
+                <select className="form-control" value={currency} onChange={e => setCurrency(e.target.value)} required>
+                  <option value="OMR">OMR (Omani Rial)</option>
+                  <option value="AED">AED (UAE Dirham)</option>
+                  <option value="USD">USD (US Dollar)</option>
+                  <option value="SAR">SAR (Saudi Riyal)</option>
+                  <option value="EUR">EUR (Euro)</option>
+                  <option value="GBP">GBP (British Pound)</option>
+                </select>
+              </div>
             </div>
 
             {/* Debit section */}
@@ -172,7 +354,7 @@ export default function JournalVoucherPage() {
                         </select>
                       </td>
                       <td>
-                        <input type="number" step="0.01" min="0" className="form-control" style={{ textAlign: 'right', fontSize: '0.85rem' }} value={line.amount || ''} onChange={e => updateLine(line.origIdx, 'amount', Number(e.target.value))} />
+                        <input type="number" step="any" min="0.001" className="form-control" style={{ textAlign: 'right', fontSize: '0.85rem' }} value={line.amount || ''} onChange={e => updateLine(line.origIdx, 'amount', e.target.value === '' ? 0 : parseFloat(e.target.value) || 0)} />
                       </td>
                       <td>
                         {lines.length > 2 && (
@@ -215,7 +397,7 @@ export default function JournalVoucherPage() {
                         </select>
                       </td>
                       <td>
-                        <input type="number" step="0.01" min="0" className="form-control" style={{ textAlign: 'right', fontSize: '0.85rem' }} value={line.amount || ''} onChange={e => updateLine(line.origIdx, 'amount', Number(e.target.value))} />
+                        <input type="number" step="any" min="0.001" className="form-control" style={{ textAlign: 'right', fontSize: '0.85rem' }} value={line.amount || ''} onChange={e => updateLine(line.origIdx, 'amount', e.target.value === '' ? 0 : parseFloat(e.target.value) || 0)} />
                       </td>
                       <td>
                         {lines.length > 2 && (
@@ -265,7 +447,7 @@ export default function JournalVoucherPage() {
 
         <div style={{ display: 'flex', gap: '0.75rem', justifyContent: 'flex-end', marginTop: '1.5rem', paddingBottom: '2rem' }}>
           <Link href="/vouchers" className="btn btn-outline">Cancel</Link>
-          <button type="submit" className="btn btn-primary" disabled={saving || !isBalanced} style={{ minWidth: 160 }}>
+          <button type="submit" className="btn btn-primary" disabled={saving} style={{ minWidth: 160 }}>
             {saving ? 'Posting...' : 'Post Journal Voucher'}
           </button>
         </div>

@@ -42,6 +42,7 @@ export default function SalesVoucherPage() {
   // Form fields
   const [date, setDate] = useState(new Date().toISOString().split('T')[0])
   const [customerId, setCustomerId] = useState('')
+  const [currency, setCurrency] = useState('OMR')
   const [narration, setNarration] = useState('')
   const [notes, setNotes] = useState('')
   const [lines, setLines] = useState<LineItem[]>([
@@ -164,6 +165,7 @@ export default function SalesVoucherPage() {
           notes: notes.trim() || null,
           company_id: companyId,
           vat_ledger_id: vatOutputLedger?.id || null,
+          currency,
           lines: lines.map(l => ({
             ledger_id: l.ledger_id,
             description: l.description,
@@ -182,22 +184,30 @@ export default function SalesVoucherPage() {
 
       const voucher = await res.json()
       
-      // Load journal lines and voucher lines for printable preview
+      // Capture the submitted line items BEFORE resetting the form.
+      // These contain the real service names & amounts for the invoice print.
+      const capturedLines = lines.map(l => ({
+        id: crypto.randomUUID(),
+        ledger_id: l.ledger_id,
+        description: l.description,
+        amount: l.amount,
+        vat_rate: l.vat_rate,
+        vat_amount: l.vat_amount,
+        ledger: ledgers.find(led => led.id === l.ledger_id)
+          ? { name: (ledgers.find(led => led.id === l.ledger_id) as any)?.name, account_code: (ledgers.find(led => led.id === l.ledger_id) as any)?.account_code }
+          : undefined,
+      }))
+
+      // Load journal lines for the printable preview
       setLoadingJournal(true)
-      const [{ data: jLines }, { data: vLines }] = await Promise.all([
-        (supabase as any)
-          .from('journal_lines')
-          .select('*, ledger:ledgers(name, account_code, classification)')
-          .eq('voucher_id', voucher.id)
-          .order('type', { ascending: true }),
-        (supabase as any)
-          .from('voucher_lines')
-          .select('*, ledger:ledgers(name, account_code)')
-          .eq('voucher_id', voucher.id)
-      ])
+      const { data: jLines } = await (supabase as any)
+        .from('journal_lines')
+        .select('*, ledger:ledgers(name, account_code, classification)')
+        .eq('voucher_id', voucher.id)
+        .order('type', { ascending: true })
 
       setPostedJournalLines(jLines ?? [])
-      setPostedVoucherLines(vLines ?? [])
+      setPostedVoucherLines(capturedLines)
       setPostedVoucher(voucher)
       setSuccess(`Sales Invoice ${voucher.voucher_number} posted successfully!`)
       setLoadingJournal(false)
@@ -312,6 +322,24 @@ export default function SalesVoucherPage() {
     }
   }
 
+  function handleWhatsApp() {
+    if (!postedVoucher) return
+    const customerLedger = ledgers.find(l => l.name === postedVoucher.party_name)
+    const phone = (customerLedger?.phone || '').replace(/\D/g, '')
+    
+    const message = `Dear ${postedVoucher.party_name || 'Customer'},\n\n` +
+      `Hope you are doing well.\n\n` +
+      `Please find details of your Tax Invoice *${postedVoucher.voucher_number}* from Tadbeer Transformations:\n` +
+      `• Date: ${new Date(postedVoucher.date).toLocaleDateString('en-GB')}\n` +
+      `• Total Amount: *OMR ${Number(postedVoucher.grand_total).toFixed(3)}*\n\n` +
+      `Thank you!\n\n` +
+      `Tadbeer Transformations`;
+      
+    const encodedText = encodeURIComponent(message)
+    const waUrl = phone ? `https://wa.me/${phone}?text=${encodedText}` : `https://api.whatsapp.com/send?text=${encodedText}`
+    window.open(waUrl, '_blank')
+  }
+
   function startNewInvoice() {
     setPostedVoucher(null)
     setPostedJournalLines([])
@@ -338,12 +366,15 @@ export default function SalesVoucherPage() {
               </div>
             </div>
             
-            <div style={{ display: 'flex', gap: '0.5rem' }}>
+            <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
               <button className="btn btn-primary" onClick={handlePrint} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                 <Printer size={16} /> Print Invoice
               </button>
               <button className="btn btn-outline" onClick={handleEmail} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                 <Mail size={16} /> Email Customer
+              </button>
+              <button className="btn btn-outline" onClick={handleWhatsApp} style={{ display: 'flex', alignItems: 'center', gap: 6, color: '#25D366', borderColor: '#25D366' }}>
+                WhatsApp
               </button>
               <button className="btn btn-ghost" onClick={startNewInvoice} style={{ display: 'flex', alignItems: 'center', gap: 6, color: 'var(--color-teal)' }}>
                 <RefreshCw size={16} /> Post Another Invoice
@@ -363,6 +394,7 @@ export default function SalesVoucherPage() {
               voucherLines={postedVoucherLines}
               companySettings={companySettings} 
               partyLedger={ledgers.find(l => l.name === postedVoucher.party_name)}
+              currency={currency}
             />
           )}
         </div>
@@ -395,10 +427,21 @@ export default function SalesVoucherPage() {
         <div className="card" style={{ marginTop: '1rem' }}>
           <div className="card-body">
             {/* Top fields */}
-            <div className="form-grid form-grid-2" style={{ marginBottom: '1.5rem' }}>
+            <div className="form-grid form-grid-3" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '1rem', marginBottom: '1.5rem' }}>
               <div className="form-group">
                 <label className="form-label required">Date</label>
                 <input type="date" className="form-control" value={date} onChange={e => setDate(e.target.value)} required />
+              </div>
+              <div className="form-group">
+                <label className="form-label required">Currency</label>
+                <select className="form-control" value={currency} onChange={e => setCurrency(e.target.value)} required>
+                  <option value="OMR">OMR (Omani Rial)</option>
+                  <option value="AED">AED (UAE Dirham)</option>
+                  <option value="USD">USD (US Dollar)</option>
+                  <option value="SAR">SAR (Saudi Riyal)</option>
+                  <option value="EUR">EUR (Euro)</option>
+                  <option value="GBP">GBP (British Pound)</option>
+                </select>
               </div>
               <div className="form-group">
                 <label className="form-label required">Customer</label>

@@ -1,11 +1,12 @@
 'use client'
 import { useEffect, useState, useCallback } from 'react'
-import { Plus, Trash2, AlertCircle, CheckCircle, ArrowLeft } from 'lucide-react'
+import { Plus, Trash2, AlertCircle, CheckCircle, ArrowLeft, Printer, RefreshCw } from 'lucide-react'
 import Link from 'next/link'
 import { supabase } from '@/lib/supabase/client'
 import { numberToWords } from '@/lib/accounting'
-import type { Ledger } from '@/lib/types'
+import type { Ledger, Voucher, JournalLine } from '@/lib/types'
 import { useUIStore } from '@/store/ui'
+import { PrintableVoucher } from '@/components/voucher/PrintableVoucher'
 
 interface PaymentLine {
   ledger_id: string
@@ -21,9 +22,16 @@ export default function PaymentVoucherPage() {
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [success, setSuccess] = useState<string | null>(null)
+  const [companySettings, setCompanySettings] = useState<any>(null)
+
+  // Success view states
+  const [postedVoucher, setPostedVoucher] = useState<Voucher | null>(null)
+  const [postedJournalLines, setPostedJournalLines] = useState<JournalLine[]>([])
+  const [loadingJournal, setLoadingJournal] = useState(false)
 
   const [date, setDate] = useState(new Date().toISOString().split('T')[0])
   const [bankCashId, setBankCashId] = useState('')
+  const [currency, setCurrency] = useState('OMR')
   const [ref, setRef] = useState('')
   const [narration, setNarration] = useState('')
   const [lines, setLines] = useState<PaymentLine[]>([
@@ -33,18 +41,30 @@ export default function PaymentVoucherPage() {
   // Real-time ledger balances map
   const [balances, setBalances] = useState<Record<string, { balance: number; type: string }>>({})
 
-  const loadLedgers = useCallback(async () => {
+  const loadData = useCallback(async () => {
     setLoading(true)
-    const { data } = await (supabase as any)
-      .from('ledgers')
-      .select('*, group:groups(id, name, nature)')
-      .eq('company_id', companyId)
-      .order('name')
-    setLedgers(data ?? [])
+    try {
+      const [{ data: ledg }, { data: settings }] = await Promise.all([
+        (supabase as any)
+          .from('ledgers')
+          .select('*, group:groups(id, name, nature)')
+          .eq('company_id', companyId)
+          .order('name'),
+        (supabase as any)
+          .from('settings')
+          .select('*')
+          .eq('company_id', companyId)
+          .maybeSingle()
+      ])
+      setLedgers(ledg ?? [])
+      setCompanySettings(settings)
+    } catch (err) {
+      console.error(err)
+    }
     setLoading(false)
   }, [companyId])
 
-  useEffect(() => { loadLedgers() }, [loadLedgers])
+  useEffect(() => { loadData() }, [loadData])
 
   // Helper to fetch ledger balance dynamically
   const fetchBalance = useCallback(async (ledgerId: string) => {
@@ -59,17 +79,16 @@ export default function PaymentVoucherPage() {
   }, [])
 
   useEffect(() => {
-    if (bankCashId) {
-      fetchBalance(bankCashId)
-    }
+    if (bankCashId) fetchBalance(bankCashId)
   }, [bankCashId, fetchBalance])
 
-  // Bank and Cash accounts
+  // Paid From accounts
   const bankCashAccounts = ledgers.filter(l => {
     const n = l.name.toLowerCase()
     return n.includes('cash') || n.includes('bank')
   })
-  // Payable accounts: suppliers, expenses, liabilities (exclude bank/cash)
+  
+  // Payable accounts
   const payableAccounts = ledgers.filter(l => {
     const n = (l.group as any)?.nature
     const lName = l.name.toLowerCase()
@@ -117,8 +136,9 @@ export default function PaymentVoucherPage() {
         body: JSON.stringify({
           type: 'PAYMENT',
           date,
-          party_ledger_id: bankCashId,
+          party_ledger_id: lines[0]?.ledger_id || '',
           party_name: bankLedger?.name || '',
+          bank_cash_ledger_id: bankCashId,
           amount: totalAmount,
           subtotal: totalAmount,
           vat_total: 0,
@@ -126,6 +146,7 @@ export default function PaymentVoucherPage() {
           narration: narration.trim(),
           notes: ref.trim() ? `Ref/Cheque: ${ref.trim()}` : null,
           company_id: companyId,
+          currency,
           lines: lines.map(l => ({
             ledger_id: l.ledger_id,
             description: 'Payment',
@@ -143,8 +164,20 @@ export default function PaymentVoucherPage() {
       }
 
       const voucher = await res.json()
+      setPostedVoucher(voucher)
       setSuccess(`Payment Voucher ${voucher.voucher_number} posted successfully!`)
       
+      // Load journal lines for printable preview
+      setLoadingJournal(true)
+      const { data: jLines } = await (supabase as any)
+        .from('journal_lines')
+        .select('*, ledger:ledgers(name, account_code, classification)')
+        .eq('voucher_id', voucher.id)
+        .order('type', { ascending: true })
+
+      setPostedJournalLines(jLines ?? [])
+      setLoadingJournal(false)
+
       // Refresh balances
       fetchBalance(bankCashId)
       lines.forEach(l => { if (l.ledger_id) fetchBalance(l.ledger_id) })
@@ -160,8 +193,75 @@ export default function PaymentVoucherPage() {
     }
   }
 
+  function handlePrint() {
+    const el = document.getElementById('printable-voucher')
+    if (!el) return
+    const win = window.open('', '_blank')
+    if (!win) return
+    win.document.write(`
+      <html><head><title>Print Payment Voucher</title>
+      <style>
+        body { font-family: 'Inter', sans-serif; padding: 2rem; color: #1a1a1a; }
+        table { width: 100%; border-collapse: collapse; margin: 1rem 0; }
+        th, td { padding: 8px 12px; border: 1px solid #ddd; text-align: left; font-size: 0.85rem; }
+        th { background: #f8f8f8; font-weight: 600; }
+        .print-total-row { font-weight: 700; background: #f0f0f0; }
+        @media print { body { padding: 0; } }
+      </style></head><body>${el.innerHTML}</body></html>
+    `)
+    win.document.close()
+    win.print()
+  }
+
+  function startNewVoucher() {
+    setPostedVoucher(null)
+    setPostedJournalLines([])
+    setSuccess(null)
+  }
+
   if (loading) {
     return <div style={{ padding: '2rem' }}><div className="skeleton" style={{ height: 300, borderRadius: 12 }} /></div>
+  }
+
+  if (postedVoucher) {
+    return (
+      <div style={{ maxWidth: 840, margin: '0 auto', padding: '1rem 0 3rem' }}>
+        <div className="card" style={{ border: '1px solid var(--color-success)', background: 'var(--color-surface)', marginBottom: '1.5rem' }}>
+          <div className="card-body" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '1rem' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+              <div style={{ width: 40, height: 40, background: 'rgba(34,197,94,0.1)', color: '#22c55e', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <CheckCircle size={22} />
+              </div>
+              <div>
+                <h3 style={{ fontSize: '1rem', fontWeight: 700, color: 'var(--color-success)', margin: 0 }}>Payment Voucher Posted</h3>
+                <p style={{ fontSize: '0.8rem', color: 'var(--color-text-secondary)', margin: 0 }}>Voucher Number: <strong>{postedVoucher.voucher_number}</strong></p>
+              </div>
+            </div>
+            <div style={{ display: 'flex', gap: '0.5rem' }}>
+              <button className="btn btn-teal" onClick={handlePrint} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                <Printer size={16} /> Print Payment
+              </button>
+              <button className="btn btn-ghost" onClick={startNewVoucher} style={{ display: 'flex', alignItems: 'center', gap: 6, color: 'var(--color-teal)' }}>
+                <RefreshCw size={16} /> Post Another Payment
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <div className="card" style={{ padding: '2.5rem', boxShadow: 'var(--shadow-lg)' }}>
+          {loadingJournal ? (
+            <div style={{ textAlign: 'center', padding: '3rem' }}>Loading payment preview...</div>
+          ) : (
+            <PrintableVoucher 
+              voucher={postedVoucher} 
+              journalLines={postedJournalLines} 
+              companySettings={companySettings}
+              currency={postedVoucher.currency || 'OMR'}
+            />
+          )}
+        </div>
+      </div>
+    )
   }
 
   return (
@@ -184,10 +284,21 @@ export default function PaymentVoucherPage() {
       <form onSubmit={handleSubmit}>
         <div className="card" style={{ marginTop: '1rem' }}>
           <div className="card-body">
-            <div className="form-grid form-grid-2" style={{ marginBottom: '1.5rem' }}>
+            <div className="form-grid form-grid-3" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '1rem', marginBottom: '1.5rem' }}>
               <div className="form-group">
                 <label className="form-label required">Date</label>
                 <input type="date" className="form-control" value={date} onChange={e => setDate(e.target.value)} required />
+              </div>
+              <div className="form-group">
+                <label className="form-label required">Currency</label>
+                <select className="form-control" value={currency} onChange={e => setCurrency(e.target.value)} required>
+                  <option value="OMR">OMR (Omani Rial)</option>
+                  <option value="AED">AED (UAE Dirham)</option>
+                  <option value="USD">USD (US Dollar)</option>
+                  <option value="SAR">SAR (Saudi Riyal)</option>
+                  <option value="EUR">EUR (Euro)</option>
+                  <option value="GBP">GBP (British Pound)</option>
+                </select>
               </div>
               <div className="form-group">
                 <label className="form-label required">Paid From</label>
@@ -205,77 +316,56 @@ export default function PaymentVoucherPage() {
               </div>
             </div>
 
-            <div className="form-group" style={{ marginBottom: '1.5rem' }}>
-              <label className="form-label">Reference / Cheque No.</label>
-              <input className="form-control" value={ref} onChange={e => setRef(e.target.value)} placeholder="e.g. CHQ-001234" />
-            </div>
+            <div style={{ marginBottom: '1.5rem' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem' }}>
+                <span className="form-label" style={{ margin: 0 }}>Debits (Payment Details)</span>
+                <button type="button" className="btn btn-outline btn-sm" onClick={addLine}>+ Add Line</button>
+              </div>
 
-            {/* Payment lines */}
-            <div style={{ overflowX: 'auto' }}>
-              <table className="data-table" style={{ width: '100%' }}>
-                <thead>
-                  <tr>
-                    <th style={{ width: '5%' }}>#</th>
-                    <th style={{ width: '60%' }}>Paying To</th>
-                    <th style={{ width: '25%', textAlign: 'right' }}>Amount</th>
-                    <th style={{ width: '10%' }}></th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {lines.map((line, idx) => (
-                    <tr key={idx}>
-                      <td>{idx + 1}</td>
-                      <td>
-                        <select className="form-control" value={line.ledger_id} onChange={e => updateLine(idx, 'ledger_id', e.target.value)} style={{ fontSize: '0.85rem' }}>
-                          <option value="">— Select Account —</option>
-                          {payableAccounts.map(a => (
-                            <option key={a.id} value={a.id}>{a.name} [{a.account_code}]</option>
-                          ))}
-                        </select>
-                        {line.ledger_id && balances[line.ledger_id] && (
-                          <span style={{ fontSize: '0.75rem', color: 'var(--color-text-secondary)', fontWeight: 500, display: 'block', marginTop: 2 }}>
-                            Current Balance: OMR {balances[line.ledger_id].balance.toFixed(3)} {balances[line.ledger_id].type}
-                          </span>
-                        )}
-                      </td>
-                      <td>
-                        <input type="number" step="0.01" min="0" className="form-control" style={{ textAlign: 'right', fontSize: '0.85rem' }} value={line.amount || ''} onChange={e => updateLine(idx, 'amount', e.target.value)} />
-                      </td>
-                      <td>
-                        {lines.length > 1 && (
-                          <button type="button" className="btn btn-ghost btn-sm" onClick={() => removeLine(idx)} style={{ color: 'var(--color-danger)', padding: '4px' }}>
-                            <Trash2 size={14} />
-                          </button>
-                        )}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-
-            <button type="button" className="btn btn-outline btn-sm" onClick={addLine} style={{ marginTop: '0.75rem' }}>
-              <Plus size={14} /> Add Payee Line
-            </button>
-
-            <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '1.5rem' }}>
-              <div style={{ width: 300 }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', padding: '0.75rem 0', fontSize: '1.1rem', fontWeight: 700, color: 'var(--color-teal)' }}>
-                  <span>Total Paid</span>
-                  <span style={{ fontVariantNumeric: 'tabular-nums' }}>{totalAmount.toFixed(2)}</span>
-                </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                {lines.map((line, idx) => (
+                  <div key={idx} style={{ display: 'flex', gap: '1rem', alignItems: 'center' }}>
+                    <div style={{ flex: 2 }}>
+                      <select className="form-control" value={line.ledger_id} onChange={e => updateLine(idx, 'ledger_id', e.target.value)} required>
+                        <option value="">— Select Ledger —</option>
+                        {payableAccounts.map(a => (
+                          <option key={a.id} value={a.id}>{a.name} [{a.account_code}]</option>
+                        ))}
+                      </select>
+                      {line.ledger_id && balances[line.ledger_id] && (
+                        <span style={{ fontSize: '0.75rem', color: 'var(--color-text-secondary)', display: 'block', marginTop: 2 }}>
+                          Balance: OMR {balances[line.ledger_id].balance.toFixed(3)} {balances[line.ledger_id].type}
+                        </span>
+                      )}
+                    </div>
+                    <div style={{ flex: 1 }}>
+                      <input type="number" step="0.001" min="0.001" className="form-control" placeholder="Amount" value={line.amount || ''} onChange={e => updateLine(idx, 'amount', Number(e.target.value))} required />
+                    </div>
+                    {lines.length > 1 && (
+                      <button type="button" className="btn btn-ghost text-danger" onClick={() => removeLine(idx)} style={{ padding: 8 }}>
+                        <Trash2 size={16} />
+                      </button>
+                    )}
+                  </div>
+                ))}
               </div>
             </div>
 
             {totalAmount > 0 && (
-              <div style={{ marginTop: '0.5rem', padding: '0.75rem 1rem', background: 'var(--color-surface-alt)', borderRadius: 'var(--radius-md)', fontSize: '0.8rem', color: 'var(--color-text-secondary)', fontStyle: 'italic' }}>
-                <strong>Amount in words:</strong> {numberToWords(totalAmount, 'OMR')}
+              <div style={{ marginBottom: '1.5rem', padding: '0.75rem 1rem', background: 'var(--color-surface-alt)', borderRadius: 'var(--radius-md)', fontSize: '0.8rem', color: 'var(--color-text-secondary)', fontStyle: 'italic' }}>
+                <strong>Amount in words:</strong> {numberToWords(totalAmount, currency)}
               </div>
             )}
 
-            <div className="form-group" style={{ marginTop: '1.5rem' }}>
-              <label className="form-label required">Narration</label>
-              <textarea className="form-control" value={narration} onChange={e => setNarration(e.target.value)} placeholder="e.g. Being payment of office rent to landlord via bank transfer" style={{ height: 60 }} required />
+            <div className="form-grid form-grid-2" style={{ marginBottom: '1.5rem' }}>
+              <div className="form-group">
+                <label className="form-label">Reference / Instrument</label>
+                <input className="form-control" value={ref} onChange={e => setRef(e.target.value)} placeholder="e.g. Cheque No, Bank Transfer Ref" />
+              </div>
+              <div className="form-group">
+                <label className="form-label required">Narration</label>
+                <textarea className="form-control" value={narration} onChange={e => setNarration(e.target.value)} placeholder="e.g. Paid consulting fees" style={{ height: 42 }} required />
+              </div>
             </div>
           </div>
         </div>

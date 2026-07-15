@@ -9,6 +9,7 @@ const PAGE_TITLES: Record<string, { name: string; crumb: string }> = {
   '/vouchers':              { name: 'Vouchers',          crumb: 'Transactions → All Vouchers' },
   '/vouchers/new':          { name: 'New Voucher',       crumb: 'Transactions → New' },
   '/reports/trial-balance': { name: 'Trial Balance',     crumb: 'Reports' },
+  '/reports/ledgers':       { name: 'General Ledger',    crumb: 'Reports' },
   '/reports/profit-loss':   { name: 'Profit & Loss',     crumb: 'Reports' },
   '/reports/balance-sheet': { name: 'Balance Sheet',     crumb: 'Reports' },
   '/settings':              { name: 'Settings',          crumb: 'System' },
