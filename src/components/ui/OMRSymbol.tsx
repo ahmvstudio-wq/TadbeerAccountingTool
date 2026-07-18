@@ -27,7 +27,7 @@ export function OMRSymbol({ className = '', style = {}, size = 15 }: OMRSymbolPr
         style={{ display: 'block' }}
       >
         {/* Top calligraphic loop */}
-        <path d="M42 45 C50 43, 62 38, 62 26 C62 14, 48 8, 38 8 C25 8, 18 18, 18 28 C18 42, 34 46, 44 46 C50 46, 54 42, 54 38 C54 32, 42 32, 38 24 C34 18, 38 14, 44 14 C52 14, 52 24, 52 28 C52 34, 46 40, 42 45 Z" />
+        <path fillRule="evenodd" d="M 32,48 C 22,38 20,20 32,10 C 44,0 60,4 66,16 C 72,28 72,42 68,48 L 58,48 C 61,42 61,32 55,22 C 49,12 38,12 36,22 C 34,32 36,42 38,48 Z" />
         {/* Top slanted parallel bar */}
         <polygon points="20,48 94,48 84,62 10,62" />
         {/* Bottom slanted parallel bar */}
