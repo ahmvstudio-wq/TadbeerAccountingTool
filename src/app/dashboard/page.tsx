@@ -237,7 +237,7 @@ export default function DashboardPage() {
                   <td>{new Date(v.date).toLocaleDateString('en-GB')}</td>
                   <td>{v.party_name || '—'}</td>
                   <td style={{ textAlign: 'right', fontWeight: 500, fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap' }}>
-                    <OMRSymbol size={12} style={{ marginRight: 4 }} />
+                    <OMRSymbol size={14} style={{ marginRight: 4 }} />
                     {Number(v.grand_total || v.amount).toLocaleString('en-US', { minimumFractionDigits: 3, maximumFractionDigits: 3 })}
                   </td>
                   <td style={{ maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: '0.8rem', color: 'var(--color-text-secondary)' }}>
@@ -259,7 +259,7 @@ function KpiContent({ kpi }: { kpi: KPI }) {
       <div>
         <p style={{ margin: 0, fontSize: '0.75rem', color: 'var(--color-text-secondary)', fontWeight: 600, textTransform: 'uppercase' }}>{kpi.label}</p>
         <h3 style={{ margin: '4px 0 0', fontSize: '1.15rem', fontWeight: 800, fontVariantNumeric: 'tabular-nums', display: 'flex', alignItems: 'center', gap: '4px' }}>
-          {kpi.isCurrency && <OMRSymbol size={14} />}
+          {kpi.isCurrency && <OMRSymbol size={18} />}
           {kpi.value}
         </h3>
       </div>
