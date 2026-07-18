@@ -119,7 +119,7 @@ function OMRSymbol({ size = 16 }: { size?: number }) {
         fill="currentColor"
         style={{ display: 'block' }}
       >
-        <path fillRule="evenodd" d="M 32,48 C 22,38 20,20 32,10 C 44,0 60,4 66,16 C 72,28 72,42 68,48 L 58,48 C 61,42 61,32 55,22 C 49,12 38,12 36,22 C 34,32 36,42 38,48 Z" />
+        <path fillRule="evenodd" d="M 32,48 C 22,38 20,20 32,10 C 44,0 60,4 66,16 C 72,28 72,42 68,48 Z M 42,38 C 46,38 54,34 54,26 C 54,18 46,14 42,14 C 38,14 34,18 34,26 C 34,34 38,38 42,38 Z" />
         <polygon points="20,48 94,48 84,62 10,62" />
         <polygon points="12,68 86,68 76,82 2,82" />
       </svg>
