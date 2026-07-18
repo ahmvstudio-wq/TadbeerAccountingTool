@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useCallback, Suspense } from 'react'
 import { useSearchParams, useRouter } from 'next/navigation'
-import { ArrowLeft, Calendar, Printer, AlertCircle, BookOpen, ChevronRight, FileText, Eye, Mail, X } from 'lucide-react'
+import { ArrowLeft, Calendar, Printer, AlertCircle, BookOpen, ChevronRight, FileText, Eye, Mail, X, Download } from 'lucide-react'
 import Link from 'next/link'
 import { supabase as rawSupabase } from '@/lib/supabase/client'
 const supabase = rawSupabase as any
@@ -56,6 +56,7 @@ function LedgerReportContent() {
   const [previewJournalLines, setPreviewJournalLines] = useState<(JournalLine & { ledger?: { name: string; account_code: string; classification: string } })[]>([])
   const [previewVoucherLines, setPreviewVoucherLines] = useState<any[]>([])
   const [previewPartyLedger, setPreviewPartyLedger] = useState<any | null>(null)
+  const [previewSettlements, setPreviewSettlements] = useState<{ as_source: any[]; as_target: any[] }>({ as_source: [], as_target: [] })
   const [loadingPreview, setLoadingPreview] = useState(false)
   const [companySettings, setCompanySettings] = useState<any>(null)
 
@@ -100,40 +101,75 @@ function LedgerReportContent() {
     setError(null)
 
     try {
-      // 3.1 Fetch ledger details
-      const { data: ledger, error: lErr } = await supabase
+      // 3.1 Fetch all ledgers to find targets and details
+      const { data: allLedg, error: allLedgErr } = await supabase
         .from('ledgers')
         .select('*, group:groups(id, name, nature)')
-        .eq('id', selectedLedgerId)
-        .single()
-      if (lErr) throw lErr
-      setCurrentLedger(ledger)
+        .eq('company_id', companyId)
+      if (allLedgErr) throw allLedgErr
+      const fetchedLedgers = allLedg || []
 
-      // 3.2 Fetch all journal lines for this ledger
-      // We load all lines (even prior to start date) to calculate opening balance and running balance correctly
+      let ledgerIds: string[] = []
+      let mockLedger: any = null
+      let targetLedgers: Ledger[] = []
+
+      if (selectedLedgerId === 'all') {
+        mockLedger = {
+          id: 'all',
+          name: 'All Accounts (General Ledger)',
+          account_code: 'GL',
+          group: null
+        }
+        targetLedgers = fetchedLedgers
+        ledgerIds = fetchedLedgers.map((l: any) => l.id)
+      } else if (selectedLedgerId.startsWith('group_')) {
+        const groupId = selectedLedgerId.substring(6)
+        const groupLedgers = fetchedLedgers.filter((l: any) => (l.group as any)?.id === groupId)
+        const groupObj = groupLedgers[0]?.group as any
+        mockLedger = {
+          id: selectedLedgerId,
+          name: `Entire Group: ${groupObj?.name || 'Group'}`,
+          account_code: 'GRP',
+          group: groupObj
+        }
+        targetLedgers = groupLedgers
+        ledgerIds = groupLedgers.map((l: any) => l.id)
+      } else {
+        const ledger = fetchedLedgers.find((l: any) => l.id === selectedLedgerId)
+        if (!ledger) {
+          setError('Ledger not found.')
+          setLoading(false)
+          return
+        }
+        mockLedger = ledger
+        targetLedgers = [ledger]
+        ledgerIds = [selectedLedgerId]
+      }
+
+      setCurrentLedger(mockLedger)
+
+      // 3.2 Fetch all journal lines for these ledger IDs
       const { data: jLines, error: jErr } = await supabase
         .from('journal_lines')
-        .select('*, voucher:vouchers(*)')
-        .eq('ledger_id', selectedLedgerId)
+        .select('*, ledger:ledgers(id, name, account_code), voucher:vouchers(*)')
+        .in('ledger_id', ledgerIds)
         .order('date', { ascending: true })
         .order('created_at', { ascending: true })
       if (jErr) throw jErr
 
       const dbLines = jLines || []
 
-      // 3.3 Compute balances
-      const isDrLeaning = ledger.group?.nature === 'ASSET' || ledger.group?.nature === 'EXPENSE'
+      // 3.3 Compute balances dynamically using signed ledger rules (Dr is positive, Cr is negative)
       let runningVal = 0
 
-      // Opening balance logic
-      const ledgerOpVal = Number(ledger.opening_balance || 0)
-      const ledgerOpType = ledger.opening_type || 'Dr'
-      
-      // Starting signed balance (where Dr increases Dr-leaning, Cr increases Cr-leaning)
-      if (isDrLeaning) {
-        runningVal = ledgerOpType === 'Dr' ? ledgerOpVal : -ledgerOpVal
-      } else {
-        runningVal = ledgerOpType === 'Cr' ? ledgerOpVal : -ledgerOpVal
+      // Sum opening balances of all target ledgers
+      for (const led of targetLedgers) {
+        const val = Number(led.opening_balance || 0)
+        if (led.opening_type === 'Dr') {
+          runningVal += val
+        } else {
+          runningVal -= val
+        }
       }
 
       // Compute starting point prior to startDate
@@ -141,22 +177,17 @@ function LedgerReportContent() {
       for (const line of dbLines) {
         if (line.date < startDate) {
           const amt = Number(line.amount || 0)
-          if (isDrLeaning) {
-            openingSignedVal += (line.type === 'Dr' ? amt : -amt)
+          if (line.type === 'Dr') {
+            openingSignedVal += amt
           } else {
-            openingSignedVal += (line.type === 'Cr' ? amt : -amt)
+            openingSignedVal -= amt
           }
         }
       }
 
       // Format opening balance
       const opBalAmt = Math.abs(openingSignedVal)
-      let opBalType: 'Dr' | 'Cr'
-      if (isDrLeaning) {
-        opBalType = openingSignedVal >= 0 ? 'Dr' : 'Cr'
-      } else {
-        opBalType = openingSignedVal >= 0 ? 'Cr' : 'Dr'
-      }
+      const opBalType = openingSignedVal >= 0 ? 'Dr' : 'Cr'
       setOpBalance({ amount: opBalAmt, type: opBalType })
 
       // Calculate lines in range and running balance
@@ -167,12 +198,10 @@ function LedgerReportContent() {
 
       for (const line of dbLines) {
         const amt = Number(line.amount || 0)
-        
-        // Update running total
-        if (isDrLeaning) {
-          currentSigned += (line.type === 'Dr' ? amt : -amt)
+        if (line.type === 'Dr') {
+          currentSigned += amt
         } else {
-          currentSigned += (line.type === 'Cr' ? amt : -amt)
+          currentSigned -= amt
         }
 
         const inRange = line.date >= startDate && line.date <= endDate
@@ -182,14 +211,8 @@ function LedgerReportContent() {
           else creditSum += amt
         }
 
-        // Calculate cumulative state at this line
         const balVal = Math.abs(currentSigned)
-        let balType: 'Dr' | 'Cr'
-        if (isDrLeaning) {
-          balType = currentSigned >= 0 ? 'Dr' : 'Cr'
-        } else {
-          balType = currentSigned >= 0 ? 'Cr' : 'Dr'
-        }
+        const balType = currentSigned >= 0 ? 'Dr' : 'Cr'
 
         if (inRange) {
           processedLines.push({
@@ -206,12 +229,7 @@ function LedgerReportContent() {
 
       // Calculate final closing balance
       const closeBalAmt = Math.abs(currentSigned)
-      let closeBalType: 'Dr' | 'Cr'
-      if (isDrLeaning) {
-        closeBalType = currentSigned >= 0 ? 'Dr' : 'Cr'
-      } else {
-        closeBalType = currentSigned >= 0 ? 'Cr' : 'Dr'
-      }
+      const closeBalType = currentSigned >= 0 ? 'Dr' : 'Cr'
       setClosingBalance({ amount: closeBalAmt, type: closeBalType })
 
     } catch (err: any) {
@@ -231,9 +249,10 @@ function LedgerReportContent() {
     setSelectedVoucher(voucher)
     setLoadingPreview(true)
     setPreviewPartyLedger(null)
+    setPreviewSettlements({ as_source: [], as_target: [] })
 
     try {
-      const [{ data: jLines }, { data: vLines }, { data: pLedger }] = await Promise.all([
+      const [{ data: jLines }, { data: vLines }, { data: pLedger }, settData] = await Promise.all([
         supabase
           .from('journal_lines')
           .select('*, ledger:ledgers(name, account_code, classification)')
@@ -248,12 +267,16 @@ function LedgerReportContent() {
           .select('name, phone, email, address, vat_number')
           .eq('id', voucher.party_ledger_id)
           .maybeSingle() : Promise.resolve({ data: null }),
+        fetch(`/api/settlements?action=settlements&voucher_id=${voucher.id}`).then(r => r.json()).catch(() => ({ as_source: [], as_target: [] })),
       ])
 
       setPreviewJournalLines(jLines ?? [])
       setPreviewVoucherLines(vLines ?? [])
       if (pLedger?.data) {
         setPreviewPartyLedger(pLedger.data)
+      }
+      if (settData) {
+        setPreviewSettlements(settData)
       }
     } catch (err) {
       console.error('Error loading voucher details:', err)
@@ -264,6 +287,52 @@ function LedgerReportContent() {
 
   const handlePrint = () => {
     window.print()
+  }
+
+  const handleExportCSV = () => {
+    if (!currentLedger || lines.length === 0) return
+
+    const BOM = '\uFEFF' // UTF-8 BOM for Excel compatibility
+    const isMultiAccount = selectedLedgerId === 'all' || selectedLedgerId.startsWith('group_')
+    const headers = isMultiAccount
+      ? ['Date', 'Voucher No', 'Account Code', 'Account Name', 'Type', 'Description', 'Debit (Dr)', 'Credit (Cr)', 'Running Balance', 'Balance Type']
+      : ['Date', 'Voucher No', 'Type', 'Description', 'Debit (Dr)', 'Credit (Cr)', 'Running Balance', 'Balance Type']
+
+    const rows = lines.map(line => {
+      const baseRow = [
+        new Date(line.date).toLocaleDateString('en-GB'),
+        line.voucher?.voucher_number || '',
+      ]
+      if (isMultiAccount) {
+        baseRow.push(line.ledger?.account_code || '', line.ledger?.name || '')
+      }
+      baseRow.push(
+        line.voucher ? (TYPE_LABELS[line.type as VoucherType] || line.type) : '',
+        (line.narration || line.voucher?.narration || '').replace(/,/g, ';'),
+        line.type === 'Dr' ? Number(line.amount).toFixed(3) : '',
+        line.type === 'Cr' ? Number(line.amount).toFixed(3) : '',
+        Number(line.runningBalance).toFixed(3),
+        line.runningType,
+      )
+      return baseRow
+    })
+
+    // Add summary rows
+    const summaryOffset = isMultiAccount ? ['', '', '', ''] : []
+    rows.push([])
+    rows.push([...summaryOffset, '', '', '', 'Opening Balance', opBalance.type === 'Dr' ? opBalance.amount.toFixed(3) : '', opBalance.type === 'Cr' ? opBalance.amount.toFixed(3) : '', opBalance.amount.toFixed(3), opBalance.type])
+    rows.push([...summaryOffset, '', '', '', 'Total Debits', totalDebit.toFixed(3), '', '', ''])
+    rows.push([...summaryOffset, '', '', '', 'Total Credits', '', totalCredit.toFixed(3), '', ''])
+    rows.push([...summaryOffset, '', '', '', 'Closing Balance', '', '', closingBalance.amount.toFixed(3), closingBalance.type])
+
+    const csvContent = BOM + [headers.join(','), ...rows.map(r => r.join(','))].join('\n')
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' })
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = `Ledger_${currentLedger.name.replace(/\s+/g, '_')}_${startDate}_to_${endDate}.csv`
+    link.click()
+    URL.revokeObjectURL(url)
   }
 
   const handleVoucherPrint = () => {
@@ -310,6 +379,9 @@ function LedgerReportContent() {
             </div>
           </div>
           <div style={{ display: 'flex', gap: '0.5rem' }}>
+            <button className="btn btn-outline" onClick={handleExportCSV} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              <Download size={16} /> Export CSV
+            </button>
             <button className="btn btn-primary" onClick={handlePrint} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
               <Printer size={16} /> Print Ledger
             </button>
@@ -332,11 +404,35 @@ function LedgerReportContent() {
                 style={{ height: 36, fontWeight: 600, color: 'var(--color-teal)' }}
               >
                 <option value="">— Select Account Ledger —</option>
-                {ledgers.map(l => (
-                  <option key={l.id} value={l.id}>
-                    [{l.account_code}] {l.name}
-                  </option>
-                ))}
+                <option value="all">All Accounts (General Ledger)</option>
+                {(() => {
+                  // Group ledgers by their group details for hierarchy display
+                  const grouped: Record<string, { id: string; name: string; ledgers: typeof ledgers }> = {}
+                  for (const l of ledgers) {
+                    const groupName = (l.group as any)?.name || 'Other'
+                    const groupId = (l.group as any)?.id || 'other'
+                    if (!grouped[groupName]) {
+                      grouped[groupName] = { id: groupId, name: groupName, ledgers: [] }
+                    }
+                    grouped[groupName].ledgers.push(l)
+                  }
+                  // Sort groups alphabetically
+                  return Object.keys(grouped).sort().map(groupName => {
+                    const grp = grouped[groupName]
+                    return (
+                      <optgroup key={groupName} label={`── ${groupName} ──`}>
+                        {grp.id !== 'other' && (
+                          <option key={`group_${grp.id}`} value={`group_${grp.id}`}>
+                            ★ Entire Group: {groupName}
+                          </option>
+                        )}
+                        {grp.ledgers.sort((a, b) => a.account_code.localeCompare(b.account_code)).map(l => (
+                          <option key={l.id} value={l.id}>[{l.account_code}] {l.name}</option>
+                        ))}
+                      </optgroup>
+                    )
+                  })
+                })()}
               </select>
             </div>
 
@@ -387,7 +483,7 @@ function LedgerReportContent() {
                 {companySettings?.address || 'Muscat, Sultanate of Oman'}
               </p>
               <p style={{ margin: '0', fontSize: '0.85rem', color: '#4a5568', fontWeight: 600 }}>
-                Account Ledger: {currentLedger?.name} ({currentLedger?.account_code})
+                Account/Group: {currentLedger?.name} {currentLedger?.account_code && `(${currentLedger.account_code})`}
               </p>
             </div>
             <div style={{ textAlign: 'right' }}>
@@ -397,9 +493,11 @@ function LedgerReportContent() {
               <p style={{ margin: 0, fontSize: '0.8rem', color: '#718096' }}>
                 For the period: {new Date(startDate).toLocaleDateString('en-GB')} to {new Date(endDate).toLocaleDateString('en-GB')}
               </p>
-              <p style={{ margin: '4px 0 0', fontSize: '0.8rem', fontWeight: 600, color: '#163B40' }}>
-                Group: {currentLedger?.group?.name} | Nature: {currentLedger?.group?.nature}
-              </p>
+              {currentLedger?.group && (
+                <p style={{ margin: '4px 0 0', fontSize: '0.8rem', fontWeight: 600, color: '#163B40' }}>
+                  Group: {currentLedger.group.name} | Nature: {currentLedger.group.nature}
+                </p>
+              )}
             </div>
           </div>
 
@@ -506,6 +604,11 @@ function LedgerReportContent() {
                         )}
                       </td>
                       <td style={{ padding: '10px 12px', color: '#2d3748', fontSize: '0.8rem' }}>
+                        {line.ledger && (
+                          <div style={{ fontWeight: 700, color: 'var(--color-teal)', marginBottom: 2 }}>
+                            [{line.ledger.account_code}] {line.ledger.name}
+                          </div>
+                        )}
                         <div>{line.narration || line.voucher?.narration || 'Journal entry posting'}</div>
                         {line.voucher?.party_name && (
                           <div style={{ fontSize: '0.75rem', color: '#718096', marginTop: 2 }}>Party: {line.voucher.party_name}</div>
@@ -556,6 +659,7 @@ function LedgerReportContent() {
               {loadingPreview ? (
                 <div style={{ padding: '2rem', textAlign: 'center' }}>Loading journal entries...</div>
               ) : (
+                <>
                 <PrintableVoucher 
                   voucher={selectedVoucher} 
                   journalLines={previewJournalLines} 
@@ -563,6 +667,41 @@ function LedgerReportContent() {
                   companySettings={companySettings} 
                   partyLedger={previewPartyLedger}
                 />
+
+                {/* Settlement Information */}
+                {(previewSettlements.as_source.length > 0 || previewSettlements.as_target.length > 0) && (
+                  <div style={{ borderTop: '1px dashed #E2E8F0', paddingTop: '1.5rem' }}>
+                    <h4 style={{ fontSize: '0.9rem', fontWeight: 700, color: '#163B40', marginBottom: '0.5rem' }}>Settlement Links</h4>
+                    {previewSettlements.as_source.length > 0 && (
+                      <div style={{ marginBottom: '0.75rem' }}>
+                        <p style={{ fontSize: '0.8rem', color: '#718096', margin: '0 0 0.25rem', fontWeight: 600 }}>Allocated to:</p>
+                        {previewSettlements.as_source.map((s: any) => (
+                          <div key={s.id} style={{ fontSize: '0.8rem', padding: '4px 0' }}>
+                            {s.is_on_account ? (
+                              <span style={{ color: '#f59e0b' }}>On Account: {Number(s.allocated_amount).toFixed(3)}</span>
+                            ) : (
+                              <span><strong style={{ fontFamily: 'monospace' }}>{s.target_voucher_number}</strong> — {Number(s.allocated_amount).toFixed(3)}</span>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                    {previewSettlements.as_target.length > 0 && (
+                      <div>
+                        <p style={{ fontSize: '0.8rem', color: '#718096', margin: '0 0 0.25rem', fontWeight: 600 }}>Settled by:</p>
+                        {previewSettlements.as_target.map((s: any) => (
+                          <div key={s.id} style={{ fontSize: '0.8rem', padding: '4px 0' }}>
+                            <strong style={{ fontFamily: 'monospace' }}>{s.source_voucher_number}</strong> — {Number(s.allocated_amount).toFixed(3)}
+                          </div>
+                        ))}
+                        <p style={{ fontSize: '0.8rem', color: '#ef4444', margin: '0.25rem 0 0', fontWeight: 600 }}>
+                          Outstanding: {(Number(selectedVoucher.grand_total || selectedVoucher.amount || 0) - previewSettlements.as_target.reduce((sum: number, s: any) => sum + Number(s.allocated_amount), 0)).toFixed(3)}
+                        </p>
+                      </div>
+                    )}
+                  </div>
+                )}
+                </>
               )}
             </div>
           </div>

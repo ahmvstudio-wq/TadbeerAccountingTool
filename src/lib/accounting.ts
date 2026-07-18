@@ -7,6 +7,7 @@ import type { EntryType, VoucherType } from '@/lib/types'
 
 // ============================================================
 // NUMBER TO WORDS (for amount in words on invoices)
+// Supports OMR 3-decimal precision (baisa)
 // ============================================================
 
 const ONES = ['', 'One', 'Two', 'Three', 'Four', 'Five', 'Six', 'Seven', 'Eight', 'Nine',
@@ -20,14 +21,37 @@ function convertHundreds(n: number): string {
   return ONES[Math.floor(n / 100)] + ' Hundred' + (n % 100 ? ' and ' + convertHundreds(n % 100) : '')
 }
 
-export function numberToWords(num: number, currency = 'SAR'): string {
+// Currency decimal places: OMR/KWD/BHD use 3, others use 2
+const CURRENCY_DECIMALS: Record<string, number> = {
+  OMR: 3, KWD: 3, BHD: 3,
+  SAR: 2, AED: 2, USD: 2, EUR: 2, GBP: 2, QAR: 2, INR: 2,
+}
+
+const CURRENCY_NAMES: Record<string, { major: string; minor: string }> = {
+  SAR: { major: 'Saudi Riyal', minor: 'Halalas' },
+  OMR: { major: 'Omani Rial', minor: 'Baisa' },
+  AED: { major: 'UAE Dirham', minor: 'Fils' },
+  USD: { major: 'US Dollar', minor: 'Cents' },
+  EUR: { major: 'Euro', minor: 'Cents' },
+  GBP: { major: 'British Pound', minor: 'Pence' },
+  KWD: { major: 'Kuwaiti Dinar', minor: 'Fils' },
+  BHD: { major: 'Bahraini Dinar', minor: 'Fils' },
+  QAR: { major: 'Qatari Riyal', minor: 'Dirhams' },
+  INR: { major: 'Indian Rupee', minor: 'Paise' },
+}
+
+export function numberToWords(num: number, currency = 'OMR'): string {
   if (num === 0) return 'Zero'
   
   const isNegative = num < 0
   num = Math.abs(num)
   
+  const decimals = CURRENCY_DECIMALS[currency] ?? 2
+  const divisor = Math.pow(10, decimals)
+  
   const wholePart = Math.floor(num)
-  const decimalPart = Math.round((num - wholePart) * 100)
+  // Round to the correct number of decimal places to avoid floating-point drift
+  const minorPart = Math.round((num - wholePart) * divisor)
   
   const SCALE = ['', 'Thousand', 'Million', 'Billion']
   
@@ -49,20 +73,16 @@ export function numberToWords(num: number, currency = 'SAR'): string {
     }
   }
   
-  const currencyNames: Record<string, { major: string; minor: string }> = {
-    SAR: { major: 'Saudi Riyal', minor: 'Halalas' },
-    OMR: { major: 'Omani Rial', minor: 'Baisa' },
-    AED: { major: 'UAE Dirham', minor: 'Fils' },
-    USD: { major: 'US Dollar', minor: 'Cents' },
-    EUR: { major: 'Euro', minor: 'Cents' },
-    GBP: { major: 'British Pound', minor: 'Pence' },
-  }
+  const curr = CURRENCY_NAMES[currency] || { major: currency, minor: 'units' }
   
-  const curr = currencyNames[currency] || { major: currency, minor: 'units' }
-  
-  let words = (isNegative ? 'Negative ' : '') + result + ' ' + curr.major
-  if (decimalPart > 0) {
-    words += ' and ' + convertHundreds(decimalPart) + ' ' + curr.minor
+  // Format: "Omani Rials One Hundred Five Only"
+  let words = (isNegative ? 'Negative ' : '') + curr.major + ' ' + result
+  if (minorPart > 0) {
+    if (decimals === 3) {
+      words += ' and ' + minorPart + '/1000 ' + curr.minor
+    } else {
+      words += ' and ' + convertHundreds(minorPart) + ' ' + curr.minor
+    }
   }
   words += ' Only'
   

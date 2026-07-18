@@ -75,7 +75,7 @@ export async function POST(req: NextRequest) {
     .select('base_currency')
     .eq('company_id', companyId)
     .single()
-  const baseCurrency = settings?.base_currency ?? 'SAR'
+  const baseCurrency = settings?.base_currency ?? 'OMR'
 
   // 5. Insert voucher
   const { data: voucher, error: vErr } = await supabase
@@ -96,6 +96,7 @@ export async function POST(req: NextRequest) {
       notes:           body.notes ?? null,
       narration:       body.narration,
       company_id:      companyId,
+      supplier_invoice_ref: body.supplier_invoice_ref ?? null,
     })
     .select()
     .single()
@@ -195,6 +196,64 @@ export async function POST(req: NextRequest) {
     if (jErr) return NextResponse.json({ error: jErr.message }, { status: 500 })
   }
 
+  // 8. Insert voucher lines (persisted line items with quantity/rate)
+  if (body.lines && body.lines.length > 0 && (vType === 'SALE' || vType === 'PURCHASE')) {
+    const voucherLineInserts = body.lines.map((l: any) => ({
+      voucher_id: voucher.id,
+      ledger_id: l.ledger_id,
+      description: l.description || null,
+      quantity: Number(l.quantity ?? 1),
+      rate: Number(l.rate ?? l.amount ?? 0),
+      amount: Number(l.amount),
+      vat_rate: Number(l.vat_rate ?? 0),
+      vat_amount: Number(l.vat_amount ?? 0),
+    }))
+    const { error: vlErr } = await supabase.from('voucher_lines').insert(voucherLineInserts)
+    // Non-fatal: voucher_lines is for print/settlement reference
+    if (vlErr) console.error('Failed to save voucher_lines:', vlErr.message)
+  }
+
+  // 9. Create settlements if allocations provided (Receipt/Payment inline allocation)
+  if (body.allocations && body.allocations.length > 0 && (vType === 'RECEIPT' || vType === 'PAYMENT')) {
+    const settlementInserts: any[] = []
+    for (const alloc of body.allocations) {
+      if (!alloc.target_voucher_id || alloc.amount <= 0) continue
+      settlementInserts.push({
+        company_id: companyId,
+        source_voucher_id: voucher.id,
+        source_voucher_number: voucherNumber,
+        source_type: vType,
+        target_voucher_id: alloc.target_voucher_id,
+        target_voucher_number: alloc.target_voucher_number || '',
+        target_type: alloc.target_type || (vType === 'RECEIPT' ? 'SALE' : 'PURCHASE'),
+        party_ledger_id: body.party_ledger_id || null,
+        party_name: body.party_name || null,
+        allocated_amount: Number(alloc.amount),
+        is_on_account: false,
+      })
+    }
+    // On-account for unallocated portion
+    if (body.on_account_amount && Number(body.on_account_amount) > 0) {
+      settlementInserts.push({
+        company_id: companyId,
+        source_voucher_id: voucher.id,
+        source_voucher_number: voucherNumber,
+        source_type: vType,
+        target_voucher_id: null,
+        target_voucher_number: null,
+        target_type: null,
+        party_ledger_id: body.party_ledger_id || null,
+        party_name: body.party_name || null,
+        allocated_amount: Number(body.on_account_amount),
+        is_on_account: true,
+      })
+    }
+    if (settlementInserts.length > 0) {
+      const { error: sErr } = await supabase.from('settlements').insert(settlementInserts)
+      if (sErr) console.error('Failed to save settlements:', sErr.message)
+    }
+  }
+
   return NextResponse.json(voucher, { status: 201 })
 }
 
@@ -227,7 +286,7 @@ export async function DELETE(req: NextRequest) {
     reason: reason.trim(),
   })
 
-  // 3. Delete voucher (cascade deletes journal_lines)
+  // 3. Delete voucher (cascade deletes journal_lines and voucher_lines)
   const { error } = await supabase
     .from('vouchers')
     .delete()

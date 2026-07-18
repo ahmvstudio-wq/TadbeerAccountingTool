@@ -65,6 +65,7 @@ export default function MastersPage() {
 
   const [expanded, setExpanded] = useState<Record<string, boolean>>({})
   const [error, setError] = useState<string | null>(null)
+  const [ledgerBalances, setLedgerBalances] = useState<Record<string, { balance: number; type: string }>>({})
 
   const loadData = useCallback(async () => {
     setLoading(true)
@@ -74,6 +75,27 @@ export default function MastersPage() {
     ])
     setGroups(g ?? [])
     setLedgers(l ?? [])
+
+    // Fetch current balances for all ledgers
+    const ledgerList = l ?? []
+    if (ledgerList.length > 0) {
+      const balancePromises = ledgerList.map(async (ledger: any) => {
+        try {
+          const { data } = await (supabase as any).rpc('get_ledger_balance', { p_ledger_id: ledger.id })
+          if (data && data.length > 0) {
+            return { id: ledger.id, balance: Number(data[0].current_balance), type: data[0].balance_type }
+          }
+        } catch {}
+        return null
+      })
+      const results = await Promise.all(balancePromises)
+      const balancesMap: Record<string, { balance: number; type: string }> = {}
+      for (const r of results) {
+        if (r) balancesMap[r.id] = { balance: r.balance, type: r.type }
+      }
+      setLedgerBalances(balancesMap)
+    }
+
     setLoading(false)
   }, [currentCompanyId])
 
@@ -187,6 +209,7 @@ export default function MastersPage() {
               onDeleteLedger={deleteLedger}
               onEditGroup={handleEditGroup}
               onEditLedger={handleEditLedger}
+              ledgerBalances={ledgerBalances}
               depth={0}
             />
           ))}
@@ -232,7 +255,7 @@ export default function MastersPage() {
 // ---- Tree Node ----
 function GroupNode({
   group, childGroups, groupLedgers, expanded, toggleExpand,
-  onDeleteGroup, onDeleteLedger, onEditGroup, onEditLedger, depth
+  onDeleteGroup, onDeleteLedger, onEditGroup, onEditLedger, ledgerBalances, depth
 }: {
   group: Group
   childGroups: (id: string) => Group[]
@@ -243,6 +266,7 @@ function GroupNode({
   onDeleteLedger: (id: string) => void
   onEditGroup: (group: Group) => void
   onEditLedger: (ledger: Ledger) => void
+  ledgerBalances: Record<string, { balance: number; type: string }>
   depth: number
 }) {
   const children = childGroups(group.id)
@@ -301,6 +325,7 @@ function GroupNode({
                     onDeleteLedger={onDeleteLedger}
                     onEditGroup={onEditGroup}
                     onEditLedger={onEditLedger}
+                    ledgerBalances={ledgerBalances}
                     depth={depth + 1}
                   />
                 ))}
@@ -316,6 +341,11 @@ function GroupNode({
                       {Number(ledger.opening_balance) > 0 && (
                         <span className="text-muted text-xs">
                           (Start: {Number(ledger.opening_balance).toLocaleString('en-US', { minimumFractionDigits: 3 })} {ledger.opening_type})
+                        </span>
+                      )}
+                      {ledgerBalances[ledger.id] && ledgerBalances[ledger.id].balance > 0 && (
+                        <span style={{ fontSize: '0.75rem', fontWeight: 700, padding: '1px 6px', borderRadius: 4, background: ledgerBalances[ledger.id].type === 'Dr' ? 'rgba(34,197,94,0.1)' : 'rgba(239,68,68,0.1)', color: ledgerBalances[ledger.id].type === 'Dr' ? '#22c55e' : '#ef4444' }}>
+                          {Number(ledgerBalances[ledger.id].balance).toLocaleString('en-US', { minimumFractionDigits: 3 })} {ledgerBalances[ledger.id].type}
                         </span>
                       )}
                       {(ledger.phone || ledger.email) && (
@@ -398,6 +428,7 @@ function GroupNode({
               onDeleteLedger={onDeleteLedger}
               onEditGroup={onEditGroup}
               onEditLedger={onEditLedger}
+              ledgerBalances={ledgerBalances}
               depth={depth + 1}
             />
           ))}
@@ -414,6 +445,11 @@ function GroupNode({
                   {Number(ledger.opening_balance) > 0 && (
                     <span className="text-muted text-xs">
                       (Start: {Number(ledger.opening_balance).toLocaleString('en-US', { minimumFractionDigits: 3 })} {ledger.opening_type})
+                    </span>
+                  )}
+                  {ledgerBalances[ledger.id] && ledgerBalances[ledger.id].balance > 0 && (
+                    <span style={{ fontSize: '0.7rem', fontWeight: 700, padding: '1px 5px', borderRadius: 4, background: ledgerBalances[ledger.id].type === 'Dr' ? 'rgba(34,197,94,0.1)' : 'rgba(239,68,68,0.1)', color: ledgerBalances[ledger.id].type === 'Dr' ? '#22c55e' : '#ef4444' }}>
+                      {Number(ledgerBalances[ledger.id].balance).toLocaleString('en-US', { minimumFractionDigits: 3 })} {ledgerBalances[ledger.id].type}
                     </span>
                   )}
                 </div>

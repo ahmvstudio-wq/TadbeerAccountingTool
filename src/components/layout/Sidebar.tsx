@@ -12,9 +12,20 @@ import {
   Receipt,
   BookMarked,
   Box,
+  BarChart3,
+  Scale,
+  FileBarChart,
+  PieChart,
+  ArrowLeftRight,
 } from 'lucide-react'
 
 const NAV_SECTIONS = [
+  {
+    label: 'Overview',
+    items: [
+      { href: '/dashboard', label: 'Dashboard', icon: <BarChart3 size={18} /> },
+    ],
+  },
   {
     label: 'Setup',
     items: [
@@ -25,11 +36,22 @@ const NAV_SECTIONS = [
   {
     label: 'Vouchers',
     items: [
-      { href: '/vouchers/sales', label: 'Sales Voucher', icon: <TrendingUp size={18} /> },
+      { href: '/vouchers/sales', label: 'Sales Invoice', icon: <TrendingUp size={18} /> },
       { href: '/vouchers/purchase', label: 'Purchase Voucher', icon: <ShoppingCart size={18} /> },
       { href: '/vouchers/payment', label: 'Payment Voucher', icon: <CreditCard size={18} /> },
       { href: '/vouchers/receipt', label: 'Receipt Voucher', icon: <Receipt size={18} /> },
       { href: '/vouchers/journal', label: 'Journal Voucher', icon: <BookMarked size={18} /> },
+    ],
+  },
+  {
+    label: 'Reports',
+    items: [
+      { href: '/reports/ledgers', label: 'General Ledger', icon: <FileBarChart size={18} /> },
+      { href: '/reports/trial-balance', label: 'Trial Balance', icon: <Scale size={18} /> },
+      { href: '/reports/profit-loss', label: 'Profit & Loss', icon: <PieChart size={18} /> },
+      { href: '/reports/balance-sheet', label: 'Balance Sheet', icon: <BarChart3 size={18} /> },
+      { href: '/reports/sales-register', label: 'Sales Register', icon: <TrendingUp size={18} /> },
+      { href: '/reports/purchase-register', label: 'Purchase Register', icon: <ShoppingCart size={18} /> },
     ],
   },
   {
@@ -42,6 +64,7 @@ const NAV_SECTIONS = [
     label: 'System',
     items: [
       { href: '/settings', label: 'Company Settings', icon: <Settings size={18} /> },
+      { href: '/settings/exchange-rates', label: 'Exchange Rates', icon: <ArrowLeftRight size={18} /> },
     ],
   },
 ]
@@ -50,7 +73,8 @@ export function Sidebar() {
   const pathname = usePathname()
 
   function isActive(href: string) {
-    if (href === '/masters') return pathname === '/masters' || pathname === '/'
+    if (href === '/masters') return pathname === '/masters'
+    if (href === '/dashboard') return pathname === '/dashboard' || pathname === '/'
     if (href === '/vouchers') return pathname === '/vouchers'
     return pathname.startsWith(href)
   }

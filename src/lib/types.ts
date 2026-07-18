@@ -90,6 +90,7 @@ export type Voucher = {
   company_id: string
   created_at: string
   updated_at: string
+  supplier_invoice_ref?: string | null
   journal_lines?: JournalLine[]
 }
 
@@ -105,6 +106,38 @@ export type JournalLine = {
   created_at: string
   ledger?: Ledger
   voucher?: Voucher
+}
+
+// ---- Voucher Lines (persisted line items) ----
+export type VoucherLine = {
+  id: string
+  voucher_id: string
+  ledger_id: string
+  description: string | null
+  quantity: number
+  rate: number
+  amount: number
+  vat_rate: number
+  vat_amount: number
+  created_at: string
+  ledger?: Ledger
+}
+
+// ---- Settlements ----
+export type Settlement = {
+  id: string
+  company_id: string
+  source_voucher_id: string
+  source_voucher_number: string
+  source_type: VoucherType
+  target_voucher_id: string | null
+  target_voucher_number: string | null
+  target_type: VoucherType | null
+  party_ledger_id: string
+  party_name: string | null
+  allocated_amount: number
+  is_on_account: boolean
+  created_at: string
 }
 
 // ---- Settings ----
@@ -123,10 +156,12 @@ export type Settings = {
   updated_at: string
 }
 
-// ---- Voucher Line (for multi-line Sales/Purchase) ----
+// ---- Voucher Line Item (form input for multi-line Sales/Purchase) ----
 export interface VoucherLineItem {
   ledger_id: string
   description: string
+  quantity: number
+  rate: number
   amount: number
   vat_rate: number
   vat_amount: number
@@ -170,6 +205,30 @@ export function getCurrencySymbol(code: string): string {
   return CURRENCIES.find(c => c.code === code)?.symbol ?? code
 }
 
+// ---- Currency decimal config ----
+export const CURRENCY_DECIMALS: Record<string, number> = {
+  OMR: 3,
+  KWD: 3,
+  BHD: 3,
+  SAR: 2,
+  AED: 2,
+  USD: 2,
+  EUR: 2,
+  GBP: 2,
+  QAR: 2,
+  INR: 2,
+}
+
+export function getCurrencyDecimals(code: string): number {
+  return CURRENCY_DECIMALS[code] ?? 2
+}
+
+export function formatMoney(amount: number, currencyCode: string): string {
+  const decimals = getCurrencyDecimals(currencyCode)
+  const symbol = getCurrencySymbol(currencyCode)
+  return `${symbol} ${Number(amount).toFixed(decimals)}`
+}
+
 // ---- Company (minimal) ----
 export interface Company {
   id: string
@@ -210,6 +269,18 @@ export type Database = {
         Row: JournalLine
         Insert: Omit<JournalLine, 'id' | 'created_at' | 'ledger' | 'voucher'>
         Update: Partial<JournalLine>
+        Relationships: []
+      }
+      voucher_lines: {
+        Row: VoucherLine
+        Insert: Omit<VoucherLine, 'id' | 'created_at' | 'ledger'>
+        Update: Partial<VoucherLine>
+        Relationships: []
+      }
+      settlements: {
+        Row: Settlement
+        Insert: Omit<Settlement, 'id' | 'created_at'>
+        Update: Partial<Settlement>
         Relationships: []
       }
       companies: { Row: Company; Insert: Omit<Company, 'id' | 'created_at' | 'updated_at'>; Update: Partial<Company>; Relationships: [] }

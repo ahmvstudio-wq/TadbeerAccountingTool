@@ -38,6 +38,9 @@ export default function VouchersPage() {
   const [attachmentUrl, setAttachmentUrl] = useState<string | null>(null)
   const [uploadingAttachment, setUploadingAttachment] = useState(false)
 
+  // Settlement state
+  const [settlements, setSettlements] = useState<{ as_source: any[]; as_target: any[] }>({ as_source: [], as_target: [] })
+
   // Delete modal
   const [deleteModalOpen, setDeleteModalOpen] = useState(false)
   const [voucherToDelete, setVoucherToDelete] = useState<string | null>(null)
@@ -73,8 +76,9 @@ export default function VouchersPage() {
     setLoadingJournal(true)
     setPartyLedger(null)
     setAttachmentUrl((voucher as any).attachment_url || null)
+    setSettlements({ as_source: [], as_target: [] })
     
-    const [{ data: jLines }, { data: vLines }, { data: pLedger }, { data: vRow }] = await Promise.all([
+    const [{ data: jLines }, { data: vLines }, { data: pLedger }, { data: vRow }, { data: settData }] = await Promise.all([
       supabase
         .from('journal_lines')
         .select('*, ledger:ledgers(name, account_code, classification)')
@@ -93,7 +97,9 @@ export default function VouchersPage() {
         .from('vouchers')
         .select('attachment_url')
         .eq('id', voucher.id)
-        .maybeSingle()
+        .maybeSingle(),
+      // Load settlement data
+      fetch(`/api/settlements?action=settlements&voucher_id=${voucher.id}`).then(r => r.json()).catch(() => ({ as_source: [], as_target: [] })),
     ])
     
     setJournalLines(jLines ?? [])
@@ -103,6 +109,9 @@ export default function VouchersPage() {
     }
     if (vRow) {
       setAttachmentUrl(vRow.attachment_url)
+    }
+    if (settData) {
+      setSettlements(settData)
     }
     setLoadingJournal(false)
   }
@@ -203,7 +212,7 @@ export default function VouchersPage() {
           filename:     `Voucher-${vNumber}.pdf`,
           image:        { type: 'jpeg', quality: 0.98 },
           html2canvas:  { scale: 2, useCORS: true },
-          jsPDF:        { unit: 'in', format: 'letter', orientation: 'portrait' }
+          jsPDF:        { unit: 'in', format: 'a4', orientation: 'portrait' }
         }
         await html2pdf().set(opt).from(element).save()
       }
@@ -297,7 +306,7 @@ export default function VouchersPage() {
                   <td>{new Date(v.date).toLocaleDateString('en-GB')}</td>
                   <td>{v.party_name || '—'}</td>
                   <td style={{ textAlign: 'right', fontWeight: 500, fontVariantNumeric: 'tabular-nums' }}>
-                    {Number(v.grand_total || v.amount).toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                    {Number(v.grand_total || v.amount).toLocaleString('en-US', { minimumFractionDigits: 3, maximumFractionDigits: 3 })}
                   </td>
                   <td style={{ maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: '0.8rem', color: 'var(--color-text-secondary)' }}>
                     {v.narration}
@@ -339,6 +348,96 @@ export default function VouchersPage() {
                     companySettings={companySettings} 
                     partyLedger={partyLedger}
                   />
+
+                  {/* Settlement Information */}
+                  {(settlements.as_source.length > 0 || settlements.as_target.length > 0) && (
+                    <div style={{ borderTop: '1px dashed #E2E8F0', paddingTop: '1.5rem', marginTop: '1rem' }}>
+                      <h4 style={{ fontSize: '0.9rem', fontWeight: 700, color: '#163B40', marginBottom: '0.5rem' }}>
+                        Settlement History
+                      </h4>
+
+                      {/* Allocations made FROM this voucher (if it's a receipt/payment) */}
+                      {settlements.as_source.length > 0 && (
+                        <div style={{ marginBottom: '1rem' }}>
+                          <p style={{ fontSize: '0.8rem', color: '#718096', margin: '0 0 0.5rem', fontWeight: 600 }}>
+                            Allocated to invoices:
+                          </p>
+                          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.8rem' }}>
+                            <thead>
+                              <tr style={{ borderBottom: '1px solid #E2E8F0' }}>
+                                <th style={{ padding: '6px 8px', textAlign: 'left' }}>Invoice</th>
+                                <th style={{ padding: '6px 8px', textAlign: 'right' }}>Amount</th>
+                                <th style={{ padding: '6px 8px', textAlign: 'center' }}>Status</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {settlements.as_source.map((s: any) => (
+                                <tr key={s.id} style={{ borderBottom: '1px solid #f7fafc' }}>
+                                  <td style={{ padding: '6px 8px', fontWeight: 600, fontFamily: 'monospace' }}>
+                                    {s.is_on_account ? (
+                                      <span style={{ color: '#f59e0b' }}>On Account</span>
+                                    ) : (
+                                      s.target_voucher_number || '—'
+                                    )}
+                                  </td>
+                                  <td style={{ padding: '6px 8px', textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>
+                                    {Number(s.allocated_amount).toFixed(3)}
+                                  </td>
+                                  <td style={{ padding: '6px 8px', textAlign: 'center' }}>
+                                    <span style={{
+                                      fontSize: '0.7rem', fontWeight: 600, padding: '2px 8px', borderRadius: 4,
+                                      background: s.is_on_account ? 'rgba(245,158,11,0.1)' : 'rgba(34,197,94,0.1)',
+                                      color: s.is_on_account ? '#f59e0b' : '#22c55e',
+                                    }}>
+                                      {s.is_on_account ? 'On Account' : 'Allocated'}
+                                    </span>
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      )}
+
+                      {/* Allocations made TO this voucher (if it's an invoice) */}
+                      {settlements.as_target.length > 0 && (
+                        <div>
+                          <p style={{ fontSize: '0.8rem', color: '#718096', margin: '0 0 0.5rem', fontWeight: 600 }}>
+                            Settlements received:
+                          </p>
+                          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.8rem' }}>
+                            <thead>
+                              <tr style={{ borderBottom: '1px solid #E2E8F0' }}>
+                                <th style={{ padding: '6px 8px', textAlign: 'left' }}>Voucher</th>
+                                <th style={{ padding: '6px 8px', textAlign: 'right' }}>Amount</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {settlements.as_target.map((s: any) => (
+                                <tr key={s.id} style={{ borderBottom: '1px solid #f7fafc' }}>
+                                  <td style={{ padding: '6px 8px', fontWeight: 600, fontFamily: 'monospace' }}>
+                                    {s.source_voucher_number}
+                                  </td>
+                                  <td style={{ padding: '6px 8px', textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>
+                                    {Number(s.allocated_amount).toFixed(3)}
+                                  </td>
+                                </tr>
+                              ))}
+                              <tr style={{ fontWeight: 700, background: '#f8fafc' }}>
+                                <td style={{ padding: '6px 8px' }}>Total Settled</td>
+                                <td style={{ padding: '6px 8px', textAlign: 'right', color: '#22c55e', fontVariantNumeric: 'tabular-nums' }}>
+                                  {settlements.as_target.reduce((sum: number, s: any) => sum + Number(s.allocated_amount), 0).toFixed(3)}
+                                </td>
+                              </tr>
+                            </tbody>
+                          </table>
+                          <p style={{ fontSize: '0.8rem', color: '#ef4444', margin: '0.5rem 0 0', fontWeight: 600 }}>
+                            Outstanding: {(Number(selectedVoucher.grand_total || selectedVoucher.amount || 0) - settlements.as_target.reduce((sum: number, s: any) => sum + Number(s.allocated_amount), 0)).toFixed(3)}
+                          </p>
+                        </div>
+                      )}
+                    </div>
+                  )}
 
                   {/* Attachment upload & display section */}
                   <div style={{ borderTop: '1px dashed #E2E8F0', paddingTop: '1.5rem', marginTop: '1rem' }}>

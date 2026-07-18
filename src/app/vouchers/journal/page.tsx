@@ -7,6 +7,7 @@ import { numberToWords } from '@/lib/accounting'
 import type { Ledger, EntryType, Voucher, JournalLine as DBJournalLine } from '@/lib/types'
 import { useUIStore } from '@/store/ui'
 import { PrintableVoucher } from '@/components/voucher/PrintableVoucher'
+import { OMRSymbol } from '@/components/ui/OMRSymbol'
 
 interface JournalLine {
   ledger_id: string
@@ -38,6 +39,10 @@ export default function JournalVoucherPage() {
     { ledger_id: '', type: 'Cr', amount: 0 },
   ])
 
+  // Quick Add state
+  const [showQuickAdd, setShowQuickAdd] = useState(false)
+  const [newLedgerName, setNewLedgerName] = useState('')
+
   const loadData = useCallback(async () => {
     setLoading(true)
     try {
@@ -53,8 +58,15 @@ export default function JournalVoucherPage() {
           .eq('company_id', companyId)
           .maybeSingle()
       ])
-      setLedgers(ledg ?? [])
+      const fetchedLedgers = ledg ?? []
+      setLedgers(fetchedLedgers)
       setCompanySettings(settings)
+      if (fetchedLedgers.length > 0) {
+        setLines([
+          { ledger_id: fetchedLedgers[0].id, type: 'Dr', amount: 0 },
+          { ledger_id: fetchedLedgers[0].id, type: 'Cr', amount: 0 },
+        ])
+      }
     } catch (err) {
       console.error(err)
     }
@@ -76,12 +88,52 @@ export default function JournalVoucherPage() {
   }
 
   function addLine(type: EntryType) {
-    setLines(prev => [...prev, { ledger_id: '', type, amount: 0 }])
+    const defaultLedger = ledgers[0]
+    setLines(prev => [...prev, { ledger_id: defaultLedger?.id || '', type, amount: 0 }])
   }
 
   function removeLine(idx: number) {
     if (lines.length <= 2) return
     setLines(prev => prev.filter((_, i) => i !== idx))
+  }
+
+  async function handleQuickAdd(e: React.FormEvent) {
+    e.preventDefault()
+    if (!newLedgerName.trim()) return
+
+    // Find an EXPENSE group or default group
+    let expenseGroup = ledgers.find(l => (l.group as any)?.nature === 'EXPENSE')?.group
+    if (!expenseGroup) {
+      const { data: groups } = await (supabase as any).from('groups').select('*').eq('company_id', companyId).limit(1)
+      expenseGroup = groups?.[0]
+    }
+
+    if (!expenseGroup) {
+      setError('No accounting groups found. Please create one first.')
+      return
+    }
+
+    const res = await fetch('/api/ledgers', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        name: newLedgerName.trim(),
+        group_id: expenseGroup.id,
+        opening_balance: 0,
+        classification: 'Nominal',
+        company_id: companyId,
+      }),
+    })
+
+    if (res.ok) {
+      const newLedger = await res.json()
+      setLedgers(prev => [...prev, newLedger])
+      setNewLedgerName('')
+      setShowQuickAdd(false)
+    } else {
+      const err = await res.json()
+      setError(err.error || 'Failed to create account.')
+    }
   }
 
   async function handleSubmit(e: React.FormEvent) {
@@ -142,9 +194,10 @@ export default function JournalVoucherPage() {
       setLoadingJournal(false)
 
       setNarration('')
+      const defaultLedger = ledgers[0]
       setLines([
-        { ledger_id: '', type: 'Dr', amount: 0 },
-        { ledger_id: '', type: 'Cr', amount: 0 },
+        { ledger_id: defaultLedger?.id || '', type: 'Dr', amount: 0 },
+        { ledger_id: defaultLedger?.id || '', type: 'Cr', amount: 0 },
       ])
     } catch (err: any) {
       setError(err.message || 'Network error.')
@@ -206,7 +259,7 @@ export default function JournalVoucherPage() {
           filename:     `Journal-${postedVoucher.voucher_number}.pdf`,
           image:        { type: 'jpeg', quality: 0.98 },
           html2canvas:  { scale: 2, useCORS: true },
-          jsPDF:        { unit: 'in', format: 'letter', orientation: 'portrait' }
+          jsPDF:        { unit: 'in', format: 'a4', orientation: 'portrait' }
         }
         await html2pdf().set(opt).from(element).save()
       }
@@ -346,12 +399,14 @@ export default function JournalVoucherPage() {
                     <tr key={line.origIdx}>
                       <td>{displayIdx + 1}</td>
                       <td>
-                        <select className="form-control" value={line.ledger_id} onChange={e => updateLine(line.origIdx, 'ledger_id', e.target.value)} style={{ fontSize: '0.85rem' }}>
-                          <option value="">— Select Account —</option>
-                          {ledgers.map(a => (
-                            <option key={a.id} value={a.id}>{a.name} [{a.account_code}]</option>
-                          ))}
-                        </select>
+                        <div style={{ display: 'flex', gap: '4px', alignItems: 'center' }}>
+                          <select className="form-control" value={line.ledger_id} onChange={e => updateLine(line.origIdx, 'ledger_id', e.target.value)} style={{ fontSize: '0.85rem', flex: 1 }}>
+                            {ledgers.map(a => (
+                              <option key={a.id} value={a.id}>{a.name} [{a.account_code}]</option>
+                            ))}
+                          </select>
+                          <button type="button" className="btn btn-outline btn-sm" onClick={() => setShowQuickAdd(true)} style={{ padding: '2px 6px', fontSize: '0.9rem', fontWeight: 'bold' }} title="Create Ledger">+</button>
+                        </div>
                       </td>
                       <td>
                         <input type="number" step="any" min="0.001" className="form-control" style={{ textAlign: 'right', fontSize: '0.85rem' }} value={line.amount || ''} onChange={e => updateLine(line.origIdx, 'amount', e.target.value === '' ? 0 : parseFloat(e.target.value) || 0)} />
@@ -389,12 +444,14 @@ export default function JournalVoucherPage() {
                     <tr key={line.origIdx}>
                       <td>{displayIdx + 1}</td>
                       <td>
-                        <select className="form-control" value={line.ledger_id} onChange={e => updateLine(line.origIdx, 'ledger_id', e.target.value)} style={{ fontSize: '0.85rem' }}>
-                          <option value="">— Select Account —</option>
-                          {ledgers.map(a => (
-                            <option key={a.id} value={a.id}>{a.name} [{a.account_code}]</option>
-                          ))}
-                        </select>
+                        <div style={{ display: 'flex', gap: '4px', alignItems: 'center' }}>
+                          <select className="form-control" value={line.ledger_id} onChange={e => updateLine(line.origIdx, 'ledger_id', e.target.value)} style={{ fontSize: '0.85rem', flex: 1 }}>
+                            {ledgers.map(a => (
+                              <option key={a.id} value={a.id}>{a.name} [{a.account_code}]</option>
+                            ))}
+                          </select>
+                          <button type="button" className="btn btn-outline btn-sm" onClick={() => setShowQuickAdd(true)} style={{ padding: '2px 6px', fontSize: '0.9rem', fontWeight: 'bold' }} title="Create Ledger">+</button>
+                        </div>
                       </td>
                       <td>
                         <input type="number" step="any" min="0.001" className="form-control" style={{ textAlign: 'right', fontSize: '0.85rem' }} value={line.amount || ''} onChange={e => updateLine(line.origIdx, 'amount', e.target.value === '' ? 0 : parseFloat(e.target.value) || 0)} />
@@ -424,17 +481,21 @@ export default function JournalVoucherPage() {
             }}>
               <div style={{ textAlign: 'center' }}>
                 <div style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)', marginBottom: 2 }}>Total Debit</div>
-                <div style={{ fontSize: '1.1rem', fontWeight: 700, fontVariantNumeric: 'tabular-nums', color: 'var(--color-success)' }}>{totalDr.toFixed(2)}</div>
+                <div style={{ fontSize: '1.1rem', fontWeight: 700, fontVariantNumeric: 'tabular-nums', color: 'var(--color-success)', display: 'flex', alignItems: 'center', gap: 4 }}>
+                  <OMRSymbol size={12} />{totalDr.toFixed(3)}
+                </div>
               </div>
               <div style={{ display: 'flex', alignItems: 'center' }}>
                 <Scale size={20} style={{ color: isBalanced ? 'var(--color-success)' : 'var(--color-danger)' }} />
               </div>
               <div style={{ textAlign: 'center' }}>
                 <div style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)', marginBottom: 2 }}>Total Credit</div>
-                <div style={{ fontSize: '1.1rem', fontWeight: 700, fontVariantNumeric: 'tabular-nums', color: 'var(--color-danger)' }}>{totalCr.toFixed(2)}</div>
+                <div style={{ fontSize: '1.1rem', fontWeight: 700, fontVariantNumeric: 'tabular-nums', color: 'var(--color-danger)', display: 'flex', alignItems: 'center', gap: 4 }}>
+                  <OMRSymbol size={12} />{totalCr.toFixed(3)}
+                </div>
               </div>
               <div style={{ display: 'flex', alignItems: 'center', fontSize: '0.8rem', fontWeight: 600, color: isBalanced ? 'var(--color-success)' : 'var(--color-danger)' }}>
-                {isBalanced ? '✓ Balanced' : `⚠ Difference: ${Math.abs(totalDr - totalCr).toFixed(2)}`}
+                {isBalanced ? '✓ Balanced' : `⚠ Difference: ${Math.abs(totalDr - totalCr).toFixed(3)}`}
               </div>
             </div>
 
@@ -452,6 +513,30 @@ export default function JournalVoucherPage() {
           </button>
         </div>
       </form>
+
+      {/* Quick Add Ledger Modal */}
+      {showQuickAdd && (
+        <div className="modal-overlay" onClick={() => setShowQuickAdd(false)}>
+          <div className="modal" onClick={e => e.stopPropagation()} style={{ maxWidth: 400 }}>
+            <div className="modal-header">
+              <span className="modal-title">Quick Add Account</span>
+              <button className="modal-close" onClick={() => setShowQuickAdd(false)}>&times;</button>
+            </div>
+            <form onSubmit={handleQuickAdd}>
+              <div className="modal-body">
+                <div className="form-group">
+                  <label className="form-label required">Account Name</label>
+                  <input className="form-control" value={newLedgerName} onChange={e => setNewLedgerName(e.target.value)} placeholder="e.g. Depreciation Account" required autoFocus />
+                </div>
+              </div>
+              <div className="modal-footer">
+                <button type="button" className="btn btn-outline" onClick={() => setShowQuickAdd(false)}>Cancel</button>
+                <button type="submit" className="btn btn-primary">Create Account</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

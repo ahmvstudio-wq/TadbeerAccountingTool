@@ -808,24 +808,103 @@ tbody tr:hover { background: var(--color-surface-alt); }
 }
 
 @media print {
+  /* A4 page setup */
+  @page {
+    size: A4 portrait;
+    margin: 12mm 15mm;
+  }
+
+  /* Hide all non-printable elements */
+  .no-print, 
+  nav, 
+  header, 
+  .app-shell-header, 
+  .page-header, 
+  .sidebar, 
+  button, 
+  .btn, 
+  .modal-overlay,
+  .alert,
+  .TopNav {
+    display: none !important;
+  }
+
+  body {
+    background: #FFFFFF !important;
+  }
+
   body * {
     visibility: hidden;
   }
-  .printable-voucher, .printable-voucher * {
+
+  .printable-voucher, .printable-voucher *,
+  .printable-area, .printable-area * {
     visibility: visible;
   }
-  .printable-voucher {
+
+  .printable-voucher,
+  .printable-area {
     display: block !important;
-    position: absolute;
-    left: 0;
-    top: 0;
-    width: 100%;
-    background: #FFFFFF !important;
-    color: #1F2421 !important;
-    font-size: 11pt;
-    line-height: 1.4;
-    padding: 1.5rem !important;
+    position: static !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    margin: 0 !important;
+    padding: 0 !important;
     box-shadow: none !important;
+    border: none !important;
+    background: #FFFFFF !important;
+    color: #1A202C !important;
+    font-size: 10pt;
+    line-height: 1.35;
+    overflow: visible !important;
+    page-break-inside: auto;
+  }
+
+  /* Page break control */
+  table {
+    page-break-inside: auto;
+    width: 100% !important;
+    border-collapse: collapse !important;
+  }
+  tr {
+    page-break-inside: avoid !important;
+    page-break-after: auto !important;
+  }
+  thead {
+    display: table-header-group !important;
+  }
+  tbody {
+    display: table-row-group !important;
+  }
+
+  /* Prevent header/footer from splitting */
+  .printable-voucher > div:first-child,
+  .printable-area > div:first-child {
+    page-break-after: avoid;
+  }
+
+  /* Print-only elements */
+  .only-print {
+    display: inline !important;
+  }
+
+  /* Ensure backgrounds print */
+  * {
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+    color-adjust: exact !important;
+  }
+
+  /* Footer signature section */
+  .printable-voucher > div:last-child {
+    page-break-inside: avoid;
+    page-break-before: avoid;
+  }
+
+  /* Keep totals section together */
+  .printable-voucher table tr:last-child,
+  .printable-voucher table tr:nth-last-child(2) {
+    page-break-inside: avoid;
   }
   
   .print-header {
@@ -901,8 +980,6 @@ tbody tr:hover { background: var(--color-surface-alt); }
     padding: 0.75rem 1rem;
     border-radius: 8px;
     border: 1px solid #ECE7DC;
-    -webkit-print-color-adjust: exact;
-    print-color-adjust: exact;
   }
   .print-party-row {
     margin-bottom: 0.35rem;
@@ -924,8 +1001,6 @@ tbody tr:hover { background: var(--color-surface-alt); }
     font-weight: 700;
     text-align: left;
     border: 1px solid #163B40;
-    -webkit-print-color-adjust: exact;
-    print-color-adjust: exact;
   }
   .print-entries-table td {
     padding: 8px 12px;
@@ -944,8 +1019,6 @@ tbody tr:hover { background: var(--color-surface-alt); }
     background: #FAF9F5 !important;
     border-top: 2px solid #163B40;
     border-bottom: 2px solid #163B40;
-    -webkit-print-color-adjust: exact;
-    print-color-adjust: exact;
   }
   
   .print-notes-section {
@@ -971,5 +1044,14 @@ tbody tr:hover { background: var(--color-surface-alt); }
     border-bottom: 1px solid #8F9994;
     margin-bottom: 0.5rem;
     width: 100%;
+  }
+
+  /* Page numbering via CSS counter */
+  @page {
+    @bottom-center {
+      content: "Page " counter(page) " of " counter(pages);
+      font-size: 8pt;
+      color: #8F9994;
+    }
   }
 }

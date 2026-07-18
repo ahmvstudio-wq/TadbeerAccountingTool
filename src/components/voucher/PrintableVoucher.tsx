@@ -2,14 +2,18 @@
 import React from 'react'
 import type { Voucher, JournalLine } from '@/lib/types'
 
-// Supported currencies
-const CURRENCIES: Record<string, { symbol: string; decimals: number; minor: string }> = {
-  OMR: { symbol: 'OMR', decimals: 3, minor: 'Baisa' },
-  AED: { symbol: 'AED', decimals: 2, minor: 'Fils' },
-  USD: { symbol: 'USD', decimals: 2, minor: 'Cents' },
-  SAR: { symbol: 'SAR', decimals: 2, minor: 'Halalas' },
-  EUR: { symbol: 'EUR', decimals: 2, minor: 'Cents' },
-  GBP: { symbol: 'GBP', decimals: 2, minor: 'Pence' },
+// Supported currencies with proper decimal precision
+const CURRENCIES: Record<string, { symbol: string; decimals: number; minor: string; major: string }> = {
+  OMR: { symbol: 'OMR', decimals: 3, minor: 'Baisa', major: 'Omani Rials' },
+  KWD: { symbol: 'KWD', decimals: 3, minor: 'Fils', major: 'Kuwaiti Dinars' },
+  BHD: { symbol: 'BHD', decimals: 3, minor: 'Fils', major: 'Bahraini Dinars' },
+  AED: { symbol: 'AED', decimals: 2, minor: 'Fils', major: 'UAE Dirhams' },
+  USD: { symbol: 'USD', decimals: 2, minor: 'Cents', major: 'US Dollars' },
+  SAR: { symbol: 'SAR', decimals: 2, minor: 'Halalas', major: 'Saudi Riyals' },
+  EUR: { symbol: 'EUR', decimals: 2, minor: 'Cents', major: 'Euros' },
+  GBP: { symbol: 'GBP', decimals: 2, minor: 'Pence', major: 'British Pounds' },
+  QAR: { symbol: 'QAR', decimals: 2, minor: 'Dirhams', major: 'Qatari Riyals' },
+  INR: { symbol: 'INR', decimals: 2, minor: 'Paise', major: 'Indian Rupees' },
 }
 
 interface PrintableVoucherProps {
@@ -19,6 +23,8 @@ interface PrintableVoucherProps {
     id: string
     ledger_id: string
     description: string
+    quantity?: number
+    rate?: number
     amount: number
     vat_rate: number
     vat_amount: number
@@ -42,7 +48,7 @@ interface PrintableVoucherProps {
   currency?: string
 }
 
-// --- Number to words (OMR/multi-currency) ---
+// --- Number to words (OMR/multi-currency with correct decimal handling) ---
 function numberToWordsOMR(num: number, currencyCode = 'OMR'): string {
   const ones = ['', 'One', 'Two', 'Three', 'Four', 'Five', 'Six', 'Seven', 'Eight', 'Nine',
     'Ten', 'Eleven', 'Twelve', 'Thirteen', 'Fourteen', 'Fifteen', 'Sixteen', 'Seventeen', 'Eighteen', 'Nineteen']
@@ -83,78 +89,90 @@ function numberToWordsOMR(num: number, currencyCode = 'OMR'): string {
     result = 'Zero'
   }
 
-  let words = result + ' ' + currencyCode
+  // Format: "Omani Rials One Hundred Five Only"
+  let amountWords = result
   if (minorPart > 0) {
     const minorStr = decimals === 3
-      ? minorPart.toString().padStart(3, '0') + '/1000'
+      ? minorPart + '/1000'
       : minorPart.toString().padStart(2, '0') + '/100'
-    words += ` & ${curr.minor} ${minorStr}`
+    amountWords += ' and ' + minorStr + ' ' + curr.minor
   }
-  return words + ' Only'
+  return curr.major + ' ' + amountWords + ' Only'
 }
 
-// --- Format amount with currency symbol ---
+// --- OMR Symbol Component ---
+function OMRSymbol({ size = 16 }: { size?: number }) {
+  return (
+    <span 
+      style={{
+        display: 'inline-flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        verticalAlign: 'middle',
+        lineHeight: 1,
+      }}
+    >
+      <svg 
+        width={size} 
+        height={size} 
+        viewBox="0 0 100 100" 
+        fill="currentColor"
+        style={{ display: 'block' }}
+      >
+        <path d="M42 45 C50 43, 62 38, 62 26 C62 14, 48 8, 38 8 C25 8, 18 18, 18 28 C18 42, 34 46, 44 46 C50 46, 54 42, 54 38 C54 32, 42 32, 38 24 C34 18, 38 14, 44 14 C52 14, 52 24, 52 28 C52 34, 46 40, 42 45 Z" />
+        <polygon points="20,48 94,48 84,62 10,62" />
+        <polygon points="12,68 86,68 76,82 2,82" />
+      </svg>
+    </span>
+  )
+}
+
+// --- Format amount WITH currency symbol (for totals/summary) ---
 function fmt(amount: number, currencyCode = 'OMR'): string {
   const curr = CURRENCIES[currencyCode] || CURRENCIES.OMR
   return `${curr.symbol} ${Number(amount).toFixed(curr.decimals)}`
 }
 
+// --- Format amount without currency (for line items) ---
+function fmtNum(amount: number, currencyCode = 'OMR'): string {
+  const curr = CURRENCIES[currencyCode] || CURRENCIES.OMR
+  return Number(amount).toFixed(curr.decimals)
+}
+
+// --- Voucher document title (correct terminology per type) ---
+function getVoucherTitle(type: string): string {
+  switch (type) {
+    case 'SALE': return 'SALES INVOICE'
+    case 'PURCHASE': return 'PURCHASE VOUCHER'
+    case 'RECEIPT': return 'RECEIPT VOUCHER'
+    case 'PAYMENT': return 'PAYMENT VOUCHER'
+    case 'JOURNAL': return 'JOURNAL VOUCHER'
+    default: return 'VOUCHER'
+  }
+}
+
+function getPartyDetailsTitle(type: string): string {
+  switch (type) {
+    case 'SALE': return 'Customer Details'
+    case 'PURCHASE': return 'Supplier Details'
+    case 'PAYMENT': return 'Payee Details'
+    case 'RECEIPT': return 'Customer Details'
+    default: return 'Party Details'
+  }
+}
+
 // --- Shared Signature & Stamp Footer ---
 function SignatureFooter({ type }: { type: string }) {
-  const isPayment = type === 'PAYMENT'
-  const isInvoice = type === 'SALE' || type === 'PURCHASE'
-
-  if (isInvoice) {
-    return (
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', marginTop: '2.5rem' }}>
-        {/* Approved by signature */}
-        <div style={{ width: '180px', textAlign: 'center' }}>
-          <img src="/reference_signature.png" alt="Approved by" style={{ width: 140, height: 'auto', display: 'block', margin: '0 auto' }} />
-        </div>
-        {/* Company Stamp */}
-        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', marginRight: '2rem' }}>
-          <img src="/reference_stamp.png" alt="Company Stamp" style={{ width: 95, height: 'auto', display: 'block' }} />
-          <span style={{ fontSize: '0.7rem', fontWeight: 700, color: '#718096', marginTop: '4px' }}>Company Stamp</span>
-        </div>
-      </div>
-    )
-  }
-
-  // Receipt / Payment / Journal — show sig image on the Authorised Signatory slot
   return (
-    <div style={{ display: 'flex', justifyContent: 'space-between', gap: '1rem', alignItems: 'flex-end', fontSize: '0.72rem', textAlign: 'center', marginTop: '3rem' }}>
-      {isPayment && (
-        <div style={{ flex: 1 }}>
-          <div style={{ height: '40px' }} />
-          <div style={{ borderTop: '1px solid #000', margin: '0 auto 4px', width: '85%' }} />
-          <span>Receiver&apos;s Signature</span>
-        </div>
-      )}
-      <div style={{ flex: 1 }}>
-        <div style={{ height: '40px' }} />
-        <div style={{ borderTop: '1px solid #000', margin: '0 auto 4px', width: '85%' }} />
-        <span>Prepared by</span>
+    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', marginTop: '2.5rem' }}>
+      <div style={{ width: '180px', textAlign: 'center' }}>
+        <img src="/reference_signature.png" alt="Approved by" style={{ width: 140, height: 'auto', display: 'block', margin: '0 auto' }} />
+        <div style={{ borderTop: '1px solid #E2E8F0', margin: '4px auto 4px', width: '85%' }} />
+        <span style={{ fontSize: '0.7rem', fontWeight: 700, color: '#718096' }}>Approved by</span>
       </div>
-      <div style={{ flex: 1 }}>
-        <div style={{ height: '40px' }} />
-        <div style={{ borderTop: '1px solid #000', margin: '0 auto 4px', width: '85%' }} />
-        <span>Checked by</span>
-      </div>
-      <div style={{ flex: 1 }}>
-        <div style={{ height: '40px' }} />
-        <div style={{ borderTop: '1px solid #000', margin: '0 auto 4px', width: '85%' }} />
-        <span>Verified by</span>
-      </div>
-      {/* Authorised Signatory with actual signature */}
-      <div style={{ flex: 1, textAlign: 'center' }}>
-        <img src="/reference_signature.png" alt="Authorised Signature" style={{ width: 80, height: 'auto', display: 'block', margin: '0 auto' }} />
-        <div style={{ borderTop: '1px solid #000', margin: '2px auto 4px', width: '85%' }} />
-        <span>Authorised Signatory</span>
-      </div>
-      {/* Company Stamp */}
-      <div style={{ flex: 0, textAlign: 'center' }}>
-        <img src="/reference_stamp.png" alt="Company Stamp" style={{ width: 65, height: 'auto', display: 'block', margin: '0 auto' }} />
-        <span style={{ fontSize: '0.65rem' }}>Company Stamp</span>
+      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', marginRight: '2rem' }}>
+        <img src="/reference_stamp.png" alt="Company Stamp" style={{ width: 95, height: 'auto', display: 'block' }} />
+        <span style={{ fontSize: '0.7rem', fontWeight: 700, color: '#718096', marginTop: '4px' }}>Company Stamp</span>
       </div>
     </div>
   )
@@ -162,61 +180,89 @@ function SignatureFooter({ type }: { type: string }) {
 
 export function PrintableVoucher({ voucher, journalLines, voucherLines = [], companySettings, partyLedger, currency = 'OMR' }: PrintableVoucherProps) {
   const cur = currency || voucher.currency || 'OMR'
-  
-  const drTotal = journalLines.filter(l => l.type === 'Dr').reduce((sum, l) => sum + Number(l.amount), 0)
-  const crTotal = journalLines.filter(l => l.type === 'Cr').reduce((sum, l) => sum + Number(l.amount), 0)
-
   const grandTotal = Number(voucher.grand_total || voucher.amount || 0)
-  const isInvoice = voucher.type === 'SALE' || voucher.type === 'PURCHASE'
+  const isSale = voucher.type === 'SALE'
 
   const primaryColor = '#163B40'
   const accentColor = '#0284c7'
-  const lightBg = '#F7FAFC'
 
-  // ─── COMMERCIAL INVOICE (SALE / PURCHASE) ────────────────────────────────
-  if (isInvoice) {
-    return (
-      <div id="printable-voucher" className="printable-voucher" style={{ background: '#FFFFFF', color: '#1A202C', fontFamily: "'Inter', sans-serif", padding: '1.5rem', border: '1px solid #E2E8F0', fontSize: '0.85rem' }}>
+  // Get company contact from settings (single source of truth)
+  const companyPhone = companySettings?.phone || '+968 7721 3606'
+  const companyEmail = companySettings?.email || 'operation@tadbeertt.com'
+  const companyName = companySettings?.company_name || 'TADBEER TRANSFORMATION TRADING'
 
-        {/* Header */}
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '1.5rem' }}>
-          <div>
-            <h2 style={{ fontSize: '1.3rem', fontWeight: 800, color: primaryColor, margin: '0 0 4px', letterSpacing: '-0.02em', textTransform: 'uppercase' }}>
-              TADBEER TRANSFORMATION TRADING
-            </h2>
-            <p style={{ margin: '0 0 2px', fontSize: '0.75rem', color: '#4A5568', fontWeight: 600 }}>OFFICE NO: 113/114, 1st FLOOR, AL NOOR PLAZA,</p>
-            <p style={{ margin: '0 0 2px', fontSize: '0.75rem', color: '#4A5568', fontWeight: 600 }}>MADINAT QABOOS, MUSCAT, SULTANATE OF OMAN</p>
-            <p style={{ margin: '0 0 2px', fontSize: '0.75rem', color: '#4A5568' }}>operation@tadbeertt.com</p>
-            <p style={{ margin: '0 0 2px', fontSize: '0.75rem', color: '#4A5568' }}>+968 7721 3606 / 9639 6357</p>
-          </div>
-          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '0.25rem' }}>
-            {companySettings?.logo_url
-              ? <img src={companySettings.logo_url} alt="Logo" style={{ width: 140, height: 'auto', display: 'block', objectFit: 'contain' }} />
-              : <img src="/reference_logo.png" alt="Logo" style={{ width: 160, height: 'auto', display: 'block', objectFit: 'contain' }} />
-            }
-            <p style={{ margin: '4px 0 0', fontSize: '0.75rem', fontWeight: 700, color: '#1A202C' }}>
-              CR NO: {companySettings?.vat_number || '1613378'}
+  // Standardize lines computation across ALL voucher types
+  const linesToRender = (voucherLines && voucherLines.length > 0)
+    ? voucherLines
+    : (voucher.type === 'JOURNAL'
+        ? journalLines.map(jl => ({
+            description: `${jl.type === 'Cr' ? 'To ' : ''}${jl.ledger?.name || '—'}${jl.type === 'Dr' ? ' (Dr)' : ''}`,
+            quantity: 1,
+            rate: Number(jl.amount),
+            amount: Number(jl.amount),
+            vat_amount: 0,
+          }))
+        : journalLines
+            .filter(jl => {
+              // In payment, offset is the debit side (where money went)
+              // In receipt, offset is the credit side (where money came from)
+              return voucher.type === 'PAYMENT' ? jl.type === 'Dr' : jl.type === 'Cr'
+            })
+            .map(jl => ({
+              description: jl.ledger?.name || 'Particulars',
+              quantity: 1,
+              rate: Number(jl.amount),
+              amount: Number(jl.amount),
+              vat_amount: 0,
+            }))
+      )
+
+  const showPartyBox = voucher.type !== 'JOURNAL' && (partyLedger?.name || voucher.party_name)
+
+  return (
+    <div id="printable-voucher" className="printable-voucher" style={{ background: '#FFFFFF', color: '#1A202C', fontFamily: "'Inter', sans-serif", padding: '1.5rem', border: '1px solid #E2E8F0', fontSize: '0.85rem' }}>
+
+      {/* Header */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '1.5rem' }}>
+        <div>
+          <h2 style={{ fontSize: '1.3rem', fontWeight: 800, color: primaryColor, margin: '0 0 4px', letterSpacing: '-0.02em', textTransform: 'uppercase' }}>
+            {companyName}
+          </h2>
+          <p style={{ margin: '0 0 2px', fontSize: '0.75rem', color: '#4A5568', fontWeight: 600 }}>
+            {companySettings?.address || 'OFFICE NO: 113/114, 1ST FLOOR, AL NOOR PLAZA, MADINAT QABOOS, MUSCAT, SULTANATE OF OMAN'}
+          </p>
+          <p style={{ margin: '0 0 2px', fontSize: '0.75rem', color: '#4A5568' }}>{companyEmail}</p>
+          <p style={{ margin: '0 0 2px', fontSize: '0.75rem', color: '#4A5568' }}>{companyPhone}</p>
+        </div>
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '0.25rem' }}>
+          {companySettings?.logo_url
+            ? <img src={companySettings.logo_url} alt="Logo" style={{ width: 180, height: 'auto', display: 'block', objectFit: 'contain' }} />
+            : <img src="/reference_logo.png" alt="Logo" style={{ width: 180, height: 'auto', display: 'block', objectFit: 'contain' }} />
+          }
+          <p style={{ margin: '4px 0 0', fontSize: '0.75rem', fontWeight: 700, color: '#1A202C' }}>
+            CR NO: {companySettings?.vat_number || '1613378'}
+          </p>
+          {cur !== 'OMR' && (
+            <p style={{ margin: '2px 0 0', fontSize: '0.72rem', color: '#718096', fontWeight: 600 }}>
+              Currency: {cur}
             </p>
-            {cur !== 'OMR' && (
-              <p style={{ margin: '2px 0 0', fontSize: '0.72rem', color: '#718096', fontWeight: 600 }}>
-                Currency: {cur}
-              </p>
-            )}
-          </div>
+          )}
         </div>
+      </div>
 
-        {/* Title Bar */}
-        <div style={{ textAlign: 'center', borderTop: `2px solid ${accentColor}`, borderBottom: `2px solid ${accentColor}`, padding: '4px 0', marginBottom: '1.5rem' }}>
-          <h1 style={{ fontSize: '1.25rem', fontWeight: 800, color: '#0284c7', margin: 0, letterSpacing: '0.1em', textTransform: 'uppercase' }}>
-            {voucher.type === 'SALE' ? 'COMMERCIAL INVOICE' : 'PURCHASE COMMERCIAL INVOICE'}
-          </h1>
-        </div>
+      {/* Title Bar */}
+      <div style={{ textAlign: 'center', borderTop: `2px solid ${accentColor}`, borderBottom: `2px solid ${accentColor}`, padding: '4px 0', marginBottom: '1.5rem' }}>
+        <h1 style={{ fontSize: '1.25rem', fontWeight: 800, color: '#0284c7', margin: 0, letterSpacing: '0.1em', textTransform: 'uppercase' }}>
+          {getVoucherTitle(voucher.type)}
+        </h1>
+      </div>
 
-        {/* Customer & Invoice Details */}
-        <div style={{ display: 'flex', justifyContent: 'space-between', gap: '2rem', marginBottom: '1.5rem' }}>
+      {/* Customer/Supplier & Invoice Details */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', gap: '2rem', marginBottom: '1.5rem' }}>
+        {showPartyBox ? (
           <div style={{ flex: 1.2, border: '1px solid #E2E8F0', borderRadius: '4px' }}>
             <div style={{ background: '#EDF2F7', padding: '6px 10px', fontSize: '0.75rem', fontWeight: 700, borderBottom: '1px solid #E2E8F0' }}>
-              {voucher.type === 'SALE' ? 'Customer details' : 'Supplier details'}
+              {getPartyDetailsTitle(voucher.type)}
             </div>
             <div style={{ padding: '8px 10px', lineHeight: '1.4' }}>
               <div style={{ fontWeight: 700, fontSize: '0.9rem' }}>{partyLedger?.name || voucher.party_name}</div>
@@ -227,129 +273,161 @@ export function PrintableVoucher({ voucher, journalLines, voucherLines = [], com
               </div>
             </div>
           </div>
-          <div style={{ flex: 0.8, border: '1px solid #E2E8F0', borderRadius: '4px', alignSelf: 'flex-start' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.8rem' }}>
-              <tbody>
+        ) : (
+          <div style={{ flex: 1.2, border: '1px solid #E2E8F0', borderRadius: '4px' }}>
+            <div style={{ background: '#EDF2F7', padding: '6px 10px', fontSize: '0.75rem', fontWeight: 700, borderBottom: '1px solid #E2E8F0' }}>
+              Voucher Details
+            </div>
+            <div style={{ padding: '8px 10px', lineHeight: '1.4' }}>
+              <div style={{ fontWeight: 700, fontSize: '0.9rem' }}>{companyName}</div>
+              <div style={{ color: '#4A5568' }}>Adjustment and General Journal Entry</div>
+            </div>
+          </div>
+        )}
+
+        <div style={{ flex: 0.8, border: '1px solid #E2E8F0', borderRadius: '4px', alignSelf: 'flex-start' }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.8rem' }}>
+            <tbody>
+              <tr style={{ borderBottom: '1px solid #E2E8F0' }}>
+                <td style={{ padding: '6px 8px', fontWeight: 600, color: '#4A5568' }}>
+                  {voucher.type === 'SALE' ? 'Invoice No:' : 'Voucher No:'}
+                </td>
+                <td style={{ padding: '6px 8px', fontWeight: 700, textAlign: 'right' }}>{voucher.voucher_number}</td>
+              </tr>
+              <tr style={{ borderBottom: '1px solid #E2E8F0' }}>
+                <td style={{ padding: '6px 8px', fontWeight: 600, color: '#4A5568' }}>
+                  {voucher.type === 'SALE' ? 'Invoice Date:' : 'Voucher Date:'}
+                </td>
+                <td style={{ padding: '6px 8px', textAlign: 'right' }}>{new Date(voucher.date).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: '2-digit' }).replace(/ /g, '-')}</td>
+              </tr>
+              {!isSale && (voucher as any).supplier_invoice_ref && (
                 <tr style={{ borderBottom: '1px solid #E2E8F0' }}>
-                  <td style={{ padding: '6px 8px', fontWeight: 600, color: '#4A5568' }}>Invoice No:</td>
-                  <td style={{ padding: '6px 8px', fontWeight: 700, textAlign: 'right' }}>{voucher.voucher_number}</td>
+                  <td style={{ padding: '6px 8px', fontWeight: 600, color: '#4A5568' }}>Supplier Ref:</td>
+                  <td style={{ padding: '6px 8px', textAlign: 'right', fontWeight: 600 }}>{(voucher as any).supplier_invoice_ref}</td>
                 </tr>
-                <tr style={{ borderBottom: '1px solid #E2E8F0' }}>
-                  <td style={{ padding: '6px 8px', fontWeight: 600, color: '#4A5568' }}>Invoice Date:</td>
-                  <td style={{ padding: '6px 8px', textAlign: 'right' }}>{new Date(voucher.date).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: '2-digit' }).replace(/ /g, '-')}</td>
-                </tr>
+              )}
+              {isSale && (
                 <tr style={{ borderBottom: '1px solid #E2E8F0' }}>
                   <td style={{ padding: '6px 8px', fontWeight: 600, color: '#4A5568' }}>Proposal Ref:</td>
                   <td style={{ padding: '6px 8px', textAlign: 'right' }}>{voucher.ref || '—'}</td>
                 </tr>
-                <tr style={{ borderBottom: '1px solid #E2E8F0' }}>
-                  <td style={{ padding: '6px 8px', fontWeight: 600, color: '#4A5568' }}>Currency:</td>
-                  <td style={{ padding: '6px 8px', textAlign: 'right', fontWeight: 700, color: cur !== 'OMR' ? '#0284c7' : '#1A202C' }}>{cur}</td>
-                </tr>
-                <tr>
-                  <td style={{ padding: '6px 8px', fontWeight: 600, color: '#4A5568' }}>Location:</td>
-                  <td style={{ padding: '6px 8px', textAlign: 'right' }}>Muscat, Oman</td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-        </div>
-
-        {/* Particulars Table */}
-        <table style={{ width: '100%', borderCollapse: 'collapse', marginBottom: '1rem', fontSize: '0.85rem' }}>
-          <thead>
-            <tr style={{ background: '#EDF2F7', borderTop: '1px solid #CBD5E0', borderBottom: '2px solid #CBD5E0' }}>
-              <th style={{ padding: '6px 10px', textAlign: 'left', fontWeight: 700, color: '#2D3748' }}>Particulars</th>
-              <th style={{ padding: '6px 10px', textAlign: 'right', fontWeight: 700, color: '#2D3748', width: '17%' }}>Rate ({cur})</th>
-              <th style={{ padding: '6px 10px', textAlign: 'center', fontWeight: 700, color: '#2D3748', width: '10%' }}>Qty</th>
-              <th style={{ padding: '6px 10px', textAlign: 'right', fontWeight: 700, color: '#2D3748', width: '12%' }}>VAT</th>
-              <th style={{ padding: '6px 10px', textAlign: 'right', fontWeight: 700, color: '#2D3748', width: '18%' }}>Amount ({cur})</th>
-            </tr>
-          </thead>
-          <tbody>
-            {voucherLines && voucherLines.length > 0 ? (
-              voucherLines.map((line, idx) => (
-                <tr key={idx} style={{ borderBottom: '1px solid #E2E8F0' }}>
-                  <td style={{ padding: '12px 10px', verticalAlign: 'top' }}>
-                    <div style={{ fontWeight: 600 }}>{line.description || 'Service'}</div>
-                  </td>
-                  <td style={{ padding: '12px 10px', textAlign: 'right', verticalAlign: 'top', fontVariantNumeric: 'tabular-nums' }}>
-                    {fmt(line.amount, cur)}
-                  </td>
-                  <td style={{ padding: '12px 10px', textAlign: 'center', verticalAlign: 'top' }}>1.00</td>
-                  <td style={{ padding: '12px 10px', textAlign: 'right', verticalAlign: 'top', fontVariantNumeric: 'tabular-nums' }}>
-                    {fmt(line.vat_amount || 0, cur)}
-                  </td>
-                  <td style={{ padding: '12px 10px', textAlign: 'right', verticalAlign: 'top', fontWeight: 700, fontVariantNumeric: 'tabular-nums' }}>
-                    {fmt(Number(line.amount) + Number(line.vat_amount || 0), cur)}
-                  </td>
-                </tr>
-              ))
-            ) : (
+              )}
               <tr style={{ borderBottom: '1px solid #E2E8F0' }}>
-                <td style={{ padding: '12px 10px', verticalAlign: 'top' }}>
-                  <div style={{ fontWeight: 600 }}>{voucher.narration || 'Service'}</div>
+                <td style={{ padding: '6px 8px', fontWeight: 600, color: '#4A5568' }}>Currency:</td>
+                <td style={{ padding: '6px 8px', textAlign: 'right', fontWeight: 700 }}>
+                  {cur === 'OMR' ? <><OMRSymbol size={14} /> OMR</> : cur}
                 </td>
-                <td style={{ padding: '12px 10px', textAlign: 'right', verticalAlign: 'top' }}>{fmt(voucher.subtotal || voucher.amount || 0, cur)}</td>
-                <td style={{ padding: '12px 10px', textAlign: 'center', verticalAlign: 'top' }}>1.00</td>
-                <td style={{ padding: '12px 10px', textAlign: 'right', verticalAlign: 'top' }}>{fmt(voucher.vat_total || 0, cur)}</td>
-                <td style={{ padding: '12px 10px', textAlign: 'right', verticalAlign: 'top', fontWeight: 700 }}>{fmt(grandTotal, cur)}</td>
               </tr>
-            )}
-            <tr style={{ height: '80px' }}><td colSpan={5} /></tr>
-          </tbody>
-        </table>
-
-        {/* Notes & Summary Grid */}
-        <div style={{ display: 'flex', justifyContent: 'space-between', gap: '2rem', alignItems: 'flex-start', marginBottom: '1.5rem' }}>
-          <div style={{ flex: 1.1 }}>
-            <div style={{ fontSize: '0.8rem', fontWeight: 700, textDecoration: 'underline', marginBottom: '4px' }}>Additional Notes:</div>
-            <p style={{ margin: 0, fontSize: '0.8rem', color: '#4A5568', lineHeight: '1.4' }}>{voucher.narration}</p>
-            {voucher.notes && (
-              <p style={{ margin: '8px 0 0', fontSize: '0.8rem', color: '#4A5568', lineHeight: '1.4' }}>
-                <strong>Notes:</strong> {voucher.notes}
-              </p>
-            )}
-          </div>
-          <div style={{ flex: 0.9 }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.8rem' }}>
-              <tbody>
-                <tr style={{ borderBottom: '1px solid #CBD5E0' }}>
-                  <td style={{ padding: '5px 8px', fontWeight: 700 }}>Total value of supply</td>
-                  <td style={{ padding: '5px 8px', textAlign: 'right', fontWeight: 700, fontVariantNumeric: 'tabular-nums' }}>{fmt(voucher.subtotal || voucher.amount || 0, cur)}</td>
-                </tr>
-                <tr style={{ borderBottom: '1px solid #CBD5E0' }}>
-                  <td style={{ padding: '5px 8px', fontWeight: 700 }}>VAT (5%)</td>
-                  <td style={{ padding: '5px 8px', textAlign: 'right', fontWeight: 700, fontVariantNumeric: 'tabular-nums' }}>
-                    {Number(voucher.vat_total || 0) > 0 ? fmt(voucher.vat_total || 0, cur) : '-'}
-                  </td>
-                </tr>
-                <tr style={{ borderBottom: '1px solid #CBD5E0', background: '#F7FAFC' }}>
-                  <td style={{ padding: '5px 8px', fontWeight: 800 }}>Amount including VAT</td>
-                  <td style={{ padding: '5px 8px', textAlign: 'right', fontWeight: 800, fontVariantNumeric: 'tabular-nums' }}>{fmt(grandTotal, cur)}</td>
-                </tr>
-                <tr style={{ borderBottom: '1px solid #CBD5E0' }}>
-                  <td style={{ padding: '5px 8px', fontWeight: 700 }}>Advance received</td>
-                  <td style={{ padding: '5px 8px', textAlign: 'right', color: '#A0AEC0' }}>-</td>
-                </tr>
-                <tr style={{ borderTop: '2px solid #2D3748', background: '#EDF2F7' }}>
-                  <td style={{ padding: '6px 8px', fontWeight: 900 }}>Balance Amount</td>
-                  <td style={{ padding: '6px 8px', textAlign: 'right', fontWeight: 900, fontVariantNumeric: 'tabular-nums' }}>{fmt(grandTotal, cur)}</td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
+              <tr>
+                <td style={{ padding: '6px 8px', fontWeight: 600, color: '#4A5568' }}>Location:</td>
+                <td style={{ padding: '6px 8px', textAlign: 'right' }}>Muscat, Oman</td>
+              </tr>
+            </tbody>
+          </table>
         </div>
+      </div>
 
-        {/* Amounts in Words */}
-        <div style={{ borderTop: '1px solid #CBD5E0', paddingTop: '8px', marginBottom: '1.5rem' }}>
-          <span style={{ fontWeight: 700, fontSize: '0.8rem', textDecoration: 'underline' }}>Amounts in Words</span>
-          <div style={{ marginTop: '4px', fontStyle: 'italic', fontWeight: 600 }}>
-            ( {numberToWordsOMR(grandTotal, cur)} )
-          </div>
+      {/* Particulars Table — clean headers without redundant currency labels */}
+      <table style={{ width: '100%', borderCollapse: 'collapse', marginBottom: '1rem', fontSize: '0.85rem' }}>
+        <thead>
+          <tr style={{ background: '#EDF2F7', borderTop: '1px solid #CBD5E0', borderBottom: '2px solid #CBD5E0' }}>
+            <th style={{ padding: '6px 10px', textAlign: 'left', fontWeight: 700, color: '#2D3748', width: '3%' }}>#</th>
+            <th style={{ padding: '6px 10px', textAlign: 'left', fontWeight: 700, color: '#2D3748' }}>Particulars</th>
+            <th style={{ padding: '6px 10px', textAlign: 'right', fontWeight: 700, color: '#2D3748', width: '10%' }}>Qty</th>
+            <th style={{ padding: '6px 10px', textAlign: 'right', fontWeight: 700, color: '#2D3748', width: '15%' }}>Rate</th>
+            <th style={{ padding: '6px 10px', textAlign: 'right', fontWeight: 700, color: '#2D3748', width: '10%' }}>VAT</th>
+            <th style={{ padding: '6px 10px', textAlign: 'right', fontWeight: 700, color: '#2D3748', width: '17%' }}>Amount <OMRSymbol size={12} /></th>
+          </tr>
+        </thead>
+        <tbody>
+          {linesToRender && linesToRender.length > 0 ? (
+            linesToRender.map((line: any, idx) => (
+              <tr key={idx} style={{ borderBottom: '1px solid #E2E8F0' }}>
+                <td style={{ padding: '10px 10px', verticalAlign: 'top', color: '#718096' }}>{idx + 1}</td>
+                <td style={{ padding: '10px 10px', verticalAlign: 'top' }}>
+                  <div style={{ fontWeight: 600 }}>{line.description || 'Service'}</div>
+                </td>
+                <td style={{ padding: '10px 10px', textAlign: 'right', verticalAlign: 'top' }}>
+                  {Number(line.quantity || 1).toFixed(1)}
+                </td>
+                <td style={{ padding: '10px 10px', textAlign: 'right', verticalAlign: 'top', fontVariantNumeric: 'tabular-nums' }}>
+                  {fmtNum(line.rate || line.amount || 0, cur)}
+                </td>
+                <td style={{ padding: '10px 10px', textAlign: 'right', verticalAlign: 'top', fontVariantNumeric: 'tabular-nums' }}>
+                  {fmtNum(line.vat_amount || 0, cur)}
+                </td>
+                <td style={{ padding: '10px 10px', textAlign: 'right', verticalAlign: 'top', fontWeight: 700, fontVariantNumeric: 'tabular-nums' }}>
+                  {fmtNum(Number(line.amount) + Number(line.vat_amount || 0), cur)}
+                </td>
+              </tr>
+            ))
+          ) : (
+            <tr style={{ borderBottom: '1px solid #E2E8F0' }}>
+              <td style={{ padding: '10px 10px', verticalAlign: 'top', color: '#718096' }}>1</td>
+              <td style={{ padding: '10px 10px', verticalAlign: 'top' }}>
+                <div style={{ fontWeight: 600 }}>{voucher.narration || 'Service'}</div>
+              </td>
+              <td style={{ padding: '10px 10px', textAlign: 'right', verticalAlign: 'top' }}>1.0</td>
+              <td style={{ padding: '10px 10px', textAlign: 'right', verticalAlign: 'top' }}>{fmtNum(voucher.subtotal || voucher.amount || 0, cur)}</td>
+              <td style={{ padding: '10px 10px', textAlign: 'right', verticalAlign: 'top' }}>{fmtNum(voucher.vat_total || 0, cur)}</td>
+              <td style={{ padding: '10px 10px', textAlign: 'right', verticalAlign: 'top', fontWeight: 700 }}>{fmtNum(grandTotal, cur)}</td>
+            </tr>
+          )}
+          <tr style={{ height: '80px' }}><td colSpan={6} /></tr>
+        </tbody>
+      </table>
+
+      {/* Notes & Summary Grid */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', gap: '2rem', alignItems: 'flex-start', marginBottom: '1.5rem' }}>
+        <div style={{ flex: 1.1 }}>
+          <div style={{ fontSize: '0.8rem', fontWeight: 700, textDecoration: 'underline', marginBottom: '4px' }}>Additional Notes:</div>
+          <p style={{ margin: 0, fontSize: '0.8rem', color: '#4A5568', lineHeight: '1.4' }}>{voucher.narration}</p>
+          {voucher.notes && (
+            <p style={{ margin: '8px 0 0', fontSize: '0.8rem', color: '#4A5568', lineHeight: '1.4' }}>
+              <strong>Notes:</strong> {voucher.notes}
+            </p>
+          )}
         </div>
+        <div style={{ flex: 0.9 }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.8rem' }}>
+            <tbody>
+              <tr style={{ borderBottom: '1px solid #CBD5E0' }}>
+                <td style={{ padding: '5px 8px', fontWeight: 700 }}>Total value of supply</td>
+                <td style={{ padding: '5px 8px', textAlign: 'right', fontWeight: 700, fontVariantNumeric: 'tabular-nums' }}>{fmtNum(voucher.subtotal || voucher.amount || 0, cur)}</td>
+              </tr>
+              <tr style={{ borderBottom: '1px solid #CBD5E0' }}>
+                <td style={{ padding: '5px 8px', fontWeight: 700 }}>VAT</td>
+                <td style={{ padding: '5px 8px', textAlign: 'right', fontWeight: 700, fontVariantNumeric: 'tabular-nums' }}>
+                  {fmtNum(voucher.vat_total || 0, cur)}
+                </td>
+              </tr>
+              <tr style={{ borderBottom: '1px solid #CBD5E0', background: '#F7FAFC' }}>
+                <td style={{ padding: '5px 8px', fontWeight: 800 }}>Amount including VAT</td>
+                <td style={{ padding: '5px 8px', textAlign: 'right', fontWeight: 800, fontVariantNumeric: 'tabular-nums' }}>
+                  <OMRSymbol size={14} /> {fmtNum(grandTotal, cur)}
+                </td>
+              </tr>
+              <tr style={{ borderTop: '2px solid #2D3748', background: '#EDF2F7' }}>
+                <td style={{ padding: '6px 8px', fontWeight: 900 }}>Balance Amount</td>
+                <td style={{ padding: '6px 8px', textAlign: 'right', fontWeight: 900, fontVariantNumeric: 'tabular-nums' }}>
+                  <OMRSymbol size={14} /> {fmtNum(grandTotal, cur)}
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
 
-        {/* Payment Instructions */}
+      {/* Amounts in Words */}
+      <div style={{ borderTop: '1px solid #CBD5E0', paddingTop: '8px', marginBottom: '1.5rem' }}>
+        <span style={{ fontWeight: 700, fontSize: '0.8rem', textDecoration: 'underline' }}>Amounts in Words</span>
+        <div style={{ marginTop: '4px', fontStyle: 'italic', fontWeight: 600 }}>
+          ( {numberToWordsOMR(grandTotal, cur)} )
+        </div>
+      </div>
+
+      {/* Payment Instructions — ONLY for Sales Invoices */}
+      {isSale && (
         <div style={{ marginBottom: '2.5rem', maxWidth: '380px' }}>
           <div style={{ fontWeight: 700, fontSize: '0.8rem', textDecoration: 'underline', marginBottom: '6px' }}>Payment Instructions</div>
           <table style={{ width: '100%', borderCollapse: 'collapse', border: '1px solid #CBD5E0', fontSize: '0.75rem' }}>
@@ -373,181 +451,15 @@ export function PrintableVoucher({ voucher, journalLines, voucherLines = [], com
             </tbody>
           </table>
         </div>
-
-        {/* Signature & Stamp */}
-        <SignatureFooter type={voucher.type} />
-
-        {/* Computer generated notice */}
-        <div style={{ marginTop: '2rem', textAlign: 'center', fontSize: '0.7rem', color: '#718096', borderTop: '1px dashed #E2E8F0', paddingTop: '8px' }}>
-          *This is a computer generated document*
-        </div>
-      </div>
-    )
-  }
-
-  // ─── JOURNAL VOUCHER ────────────────────────────────────────────────────
-  if (voucher.type === 'JOURNAL') {
-    return (
-      <div id="printable-voucher" className="printable-voucher" style={{ background: '#FFFFFF', color: '#1A202C', fontFamily: "'Inter', sans-serif", padding: '1.5rem', border: '1px solid #CBD5E0', fontSize: '0.85rem' }}>
-
-        {/* Header */}
-        <div style={{ textAlign: 'center', marginBottom: '1.5rem' }}>
-          <h2 style={{ fontSize: '1.2rem', fontWeight: 800, margin: '0 0 4px', textTransform: 'uppercase', color: '#1A202C' }}>
-            {companySettings?.company_name || 'Tadbeer Transformations'}
-          </h2>
-          <p style={{ margin: 0, fontSize: '0.75rem', color: '#4A5568' }}>
-            E-Mail: {companySettings?.email || 'operation@tadbeertt.com'} | VATIN OM {companySettings?.vat_number || '1613378'}
-          </p>
-          <h1 style={{ fontSize: '1.3rem', fontWeight: 800, margin: '1rem 0 0.5rem', textTransform: 'uppercase', borderBottom: '1px solid #000', paddingBottom: '0.5rem', display: 'inline-block', width: '220px' }}>
-            Journal Voucher
-          </h1>
-        </div>
-
-        {/* Voucher Info */}
-        <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '2px solid #000', paddingBottom: '6px', marginBottom: '1rem', fontSize: '0.85rem' }}>
-          <div>No. : <strong style={{ fontSize: '0.9rem' }}>{voucher.voucher_number}</strong></div>
-          <div>Currency: <strong>{cur}</strong></div>
-          <div>Dated : <strong>{new Date(voucher.date).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: '2-digit' }).replace(/ /g, '-')}</strong></div>
-        </div>
-
-        {/* Dr/Cr Table */}
-        <table style={{ width: '100%', borderCollapse: 'collapse', borderBottom: '2px solid #000', marginBottom: '1rem' }}>
-          <thead>
-            <tr style={{ borderBottom: '2px solid #000', fontSize: '0.8rem', textTransform: 'uppercase', fontWeight: 700 }}>
-              <th style={{ padding: '6px 10px', textAlign: 'left', borderRight: '1px solid #E2E8F0' }}>Particulars</th>
-              <th style={{ padding: '6px 10px', textAlign: 'right', width: '22%', borderRight: '1px solid #E2E8F0' }}>Debit ({cur})</th>
-              <th style={{ padding: '6px 10px', textAlign: 'right', width: '22%' }}>Credit ({cur})</th>
-            </tr>
-          </thead>
-          <tbody>
-            {journalLines.map((line, idx) => {
-              const isCredit = line.type === 'Cr'
-              return (
-                <tr key={line.id || idx} style={{ minHeight: '35px' }}>
-                  <td style={{ padding: '6px 10px', borderRight: '1px solid #E2E8F0', paddingLeft: isCredit ? '2.5rem' : '10px' }}>
-                    {isCredit ? 'To ' : ''}{line.ledger?.name || '—'}
-                    {!isCredit ? <span style={{ float: 'right', fontWeight: 600 }}>Dr</span> : ''}
-                  </td>
-                  <td style={{ padding: '6px 10px', textAlign: 'right', borderRight: '1px solid #E2E8F0', fontVariantNumeric: 'tabular-nums' }}>
-                    {!isCredit ? fmt(line.amount, cur) : ''}
-                  </td>
-                  <td style={{ padding: '6px 10px', textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>
-                    {isCredit ? fmt(line.amount, cur) : ''}
-                  </td>
-                </tr>
-              )
-            })}
-            <tr style={{ height: '60px' }}>
-              <td style={{ borderRight: '1px solid #E2E8F0' }} /><td style={{ borderRight: '1px solid #E2E8F0' }} /><td />
-            </tr>
-            <tr style={{ borderTop: '2px solid #000', fontWeight: 700, background: lightBg }}>
-              <td style={{ padding: '6px 10px', borderRight: '1px solid #E2E8F0', textAlign: 'right' }}>Total:</td>
-              <td style={{ padding: '6px 10px', textAlign: 'right', borderRight: '1px solid #E2E8F0', fontVariantNumeric: 'tabular-nums' }}>{fmt(drTotal, cur)}</td>
-              <td style={{ padding: '6px 10px', textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{fmt(crTotal, cur)}</td>
-            </tr>
-          </tbody>
-        </table>
-
-        {/* Narration */}
-        <div style={{ marginBottom: '4rem', fontSize: '0.85rem' }}>
-          <div style={{ fontWeight: 700, marginBottom: '4px' }}>On Account of :</div>
-          <p style={{ margin: 0, paddingLeft: '10px', color: '#2D3748', fontStyle: 'italic' }}>{voucher.narration}</p>
-        </div>
-
-        {/* Signature & Stamp */}
-        <SignatureFooter type={voucher.type} />
-      </div>
-    )
-  }
-
-  // ─── RECEIPT / PAYMENT VOUCHER ───────────────────────────────────────────
-  const isPayment = voucher.type === 'PAYMENT'
-  const sourceAccount = journalLines.find(l => isPayment ? l.type === 'Cr' : l.type === 'Dr')?.ledger?.name || 'Cash/Bank Ledger'
-  const offsetAccounts = journalLines.filter(l => isPayment ? l.type === 'Dr' : l.type === 'Cr')
-
-  return (
-    <div id="printable-voucher" className="printable-voucher" style={{ background: '#FFFFFF', color: '#1A202C', fontFamily: "'Inter', sans-serif", padding: '1.5rem', border: '1px solid #CBD5E0', fontSize: '0.85rem' }}>
-
-      {/* Header */}
-      <div style={{ textAlign: 'center', marginBottom: '1.5rem' }}>
-        <h2 style={{ fontSize: '1.2rem', fontWeight: 800, margin: '0 0 4px', textTransform: 'uppercase', color: '#1A202C' }}>
-          {companySettings?.company_name || 'Tadbeer Transformations'}
-        </h2>
-        <p style={{ margin: 0, fontSize: '0.75rem', color: '#4A5568' }}>
-          E-Mail: {companySettings?.email || 'operation@tadbeertt.com'} | VATIN OM {companySettings?.vat_number || '1613378'}
-        </p>
-        <h1 style={{ fontSize: '1.3rem', fontWeight: 800, margin: '1rem 0 0.5rem', textTransform: 'uppercase', borderBottom: '1px solid #000', paddingBottom: '0.5rem', display: 'inline-block', width: '220px' }}>
-          {isPayment ? 'Payment Voucher' : 'Receipt Voucher'}
-        </h1>
-      </div>
-
-      {/* Voucher Info */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '2px solid #000', paddingBottom: '6px', marginBottom: '1rem', fontSize: '0.85rem' }}>
-        <div>No. : <strong style={{ fontSize: '0.9rem' }}>{voucher.voucher_number}</strong></div>
-        <div>Currency: <strong>{cur}</strong></div>
-        <div>Dated : <strong>{new Date(voucher.date).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: '2-digit' }).replace(/ /g, '-')}</strong></div>
-      </div>
-
-      {/* Account particulars */}
-      <table style={{ width: '100%', borderCollapse: 'collapse', borderBottom: '2px solid #000', marginBottom: '1rem' }}>
-        <thead>
-          <tr style={{ borderBottom: '2px solid #000', fontSize: '0.8rem', textTransform: 'uppercase', fontWeight: 700 }}>
-            <th style={{ padding: '6px 10px', textAlign: 'left', borderRight: '1px solid #E2E8F0' }}>Particulars</th>
-            <th style={{ padding: '6px 10px', textAlign: 'right', width: '25%' }}>Amount ({cur})</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr>
-            <td style={{ padding: '10px', fontWeight: 700, borderRight: '1px solid #E2E8F0' }}>Account :</td>
-            <td style={{ borderRight: 'none' }} />
-          </tr>
-          {offsetAccounts.map((line, idx) => (
-            <tr key={line.id || idx}>
-              <td style={{ padding: '4px 10px 4px 2rem', borderRight: '1px solid #E2E8F0' }}>
-                <span style={{ fontWeight: 600 }}>{line.ledger?.name || '—'}</span>
-              </td>
-              <td style={{ padding: '4px 10px', textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>
-                {fmt(line.amount, cur)}
-              </td>
-            </tr>
-          ))}
-          <tr style={{ height: '40px' }}>
-            <td style={{ borderRight: '1px solid #E2E8F0' }} /><td />
-          </tr>
-          <tr style={{ borderTop: '1px solid #CBD5E0' }}>
-            <td style={{ padding: '8px 10px', borderRight: '1px solid #E2E8F0' }}>
-              <strong>Through :</strong>
-              <span style={{ marginLeft: '10px', color: '#4A5568' }}>{sourceAccount}</span>
-            </td>
-            <td />
-          </tr>
-          <tr style={{ borderTop: '1px solid #CBD5E0' }}>
-            <td style={{ padding: '8px 10px', borderRight: '1px solid #E2E8F0', verticalAlign: 'top' }}>
-              <strong>On Account of :</strong>
-              <div style={{ marginTop: '4px', paddingLeft: '1rem', color: '#4A5568', fontStyle: 'italic', fontSize: '0.8rem' }}>
-                {voucher.narration}
-              </div>
-            </td>
-            <td />
-          </tr>
-          <tr style={{ borderTop: '1px solid #CBD5E0' }}>
-            <td style={{ padding: '8px 10px', borderRight: '1px solid #E2E8F0' }}>
-              <strong>Amount (in words) :</strong>
-              <div style={{ marginTop: '4px', paddingLeft: '1rem', fontWeight: 600 }}>
-                {numberToWordsOMR(grandTotal, cur)}
-              </div>
-            </td>
-            <td />
-          </tr>
-          <tr style={{ borderTop: '2px solid #000', fontWeight: 700, background: lightBg }}>
-            <td style={{ padding: '6px 10px', borderRight: '1px solid #E2E8F0', textAlign: 'right' }}>Total:</td>
-            <td style={{ padding: '6px 10px', textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{fmt(grandTotal, cur)}</td>
-          </tr>
-        </tbody>
-      </table>
+      )}
 
       {/* Signature & Stamp */}
       <SignatureFooter type={voucher.type} />
+
+      {/* Computer generated notice */}
+      <div style={{ marginTop: '2rem', textAlign: 'center', fontSize: '0.7rem', color: '#718096', borderTop: '1px dashed #E2E8F0', paddingTop: '8px' }}>
+        *This is a computer generated document*
+      </div>
     </div>
   )
 }
