@@ -505,7 +505,17 @@ function GroupFormModal({ groups, companyId, groupToEdit, onClose, onSaved }: {
     const isEdit = !!groupToEdit
     const url = '/api/groups'
     const method = isEdit ? 'PUT' : 'POST'
-    let payload: any = isEdit ? { ...data, id: groupToEdit.id, company_id: companyId } : { ...data, company_id: companyId }
+
+    // Inherit nature from parent if a parent is selected, otherwise default to ASSET (or whichever is selected if we had it)
+    let finalNature = data.nature
+    if (data.parent_id) {
+      const parentGroup = groups.find(g => g.id === data.parent_id)
+      if (parentGroup) {
+        finalNature = parentGroup.nature
+      }
+    }
+
+    let payload: any = isEdit ? { ...data, nature: finalNature, id: groupToEdit.id, company_id: companyId } : { ...data, nature: finalNature, company_id: companyId }
 
     if (!isEdit) {
       const { data: { user } } = await (supabase as any).auth.getUser()
@@ -529,32 +539,18 @@ function GroupFormModal({ groups, companyId, groupToEdit, onClose, onSaved }: {
     }
   }
 
-  const selectedNature = watch('nature')
-
-  // Only allow parents with the same nature (no cross-nature nesting)
-  // Exclude the group being edited itself to prevent self-parenting
-  const sameNatureCandidates = groups.filter(g =>
-    g.nature === selectedNature &&
-    (!groupToEdit || g.id !== groupToEdit.id)
-  )
+  // Allow all groups as parent candidates except the group being edited itself
+  const parentCandidates = groups.filter(g => !groupToEdit || g.id !== groupToEdit.id)
 
   // Build indented display for parent dropdown showing hierarchy
   function buildParentOptions(parentId: string | null | undefined, depth: number): React.ReactNode[] {
-    const children = sameNatureCandidates.filter(g => (g.parent_id ?? null) === (parentId ?? null))
+    const children = parentCandidates.filter(g => (g.parent_id ?? null) === (parentId ?? null))
     return children.flatMap(g => [
       <option key={g.id} value={g.id}>
-        {'\u3000'.repeat(depth)}{depth > 0 ? '\u2514 ' : ''}{g.name}
+        {'\u3000'.repeat(depth)}{depth > 0 ? '\u2514 ' : ''}{g.name} ({NATURE_LABELS[g.nature]})
       </option>,
       ...buildParentOptions(g.id, depth + 1)
     ])
-  }
-
-  const NATURE_DESCRIPTIONS: Record<string, string> = {
-    ASSET:     'Things the business owns — cash, receivables, inventory, fixed assets',
-    LIABILITY: 'Amounts the business owes — loans, payables, accruals',
-    INCOME:    'Revenue earned — sales, service fees, commission income',
-    EXPENSE:   'Money spent on operations — salaries, rent, utilities, COGS',
-    EQUITY:    'Owner\'s stake — capital contributed, retained earnings',
   }
 
   return (
@@ -584,33 +580,16 @@ function GroupFormModal({ groups, companyId, groupToEdit, onClose, onSaved }: {
             </div>
 
             <div className="form-group">
-              <label className="form-label required">Nature</label>
-              <select className={`form-control ${errors.nature ? 'error' : ''}`} {...register('nature')}>
-                <option value="ASSET">Business Owned (Asset)</option>
-                <option value="LIABILITY">Amount We Owe (Liability)</option>
-                <option value="INCOME">Money Earned (Income)</option>
-                <option value="EXPENSE">Money Spent (Expense)</option>
-                <option value="EQUITY">Owner Capital (Equity)</option>
-              </select>
-              {selectedNature && (
-                <span style={{ fontSize: '0.72rem', color: 'var(--color-text-secondary)', marginTop: 4, display: 'block' }}>
-                  {NATURE_DESCRIPTIONS[selectedNature]}
-                </span>
-              )}
-              {errors.nature && <span className="form-error">{errors.nature.message}</span>}
-            </div>
-
-            <div className="form-group">
               <label className="form-label">
                 Parent Group{' '}
                 <span style={{ fontWeight: 400, color: 'var(--color-text-muted)' }}>(optional — leave blank for top-level)</span>
               </label>
               <select className="form-control" {...register('parent_id')}>
-                <option value="">— Root Level ({selectedNature ? NATURE_LABELS[selectedNature as Nature] : 'Group'}) —</option>
+                <option value="">— Root Level (Asset) —</option>
                 {buildParentOptions(null, 0)}
               </select>
               <span style={{ fontSize: '0.72rem', color: 'var(--color-text-muted)', marginTop: 4, display: 'block' }}>
-                Only shows existing groups of the same nature selected above.
+                The new group will inherit the nature of the selected parent.
               </span>
             </div>
           </div>

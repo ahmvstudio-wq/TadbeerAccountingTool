@@ -175,14 +175,6 @@ export function ItemFormModal({ companyId, itemToEdit, onClose, onSaved }: ItemF
               </select>
               {errors.income_ledger_id && <span className="form-error">{errors.income_ledger_id.message}</span>}
             </div>
-
-            <div className="form-group">
-              <label className="form-label">Default Purchase / Expense Account (optional)</label>
-              <select className="form-control" {...register('expense_ledger_id')}>
-                <option value="">— Select Expense Ledger —</option>
-                {expenseLedgers.map(l => <option key={l.id} value={l.id}>{l.name} [{l.account_code}]</option>)}
-              </select>
-            </div>
           </div>
           <div className="modal-footer">
             <button type="button" className="btn btn-outline" onClick={onClose}>Cancel</button>

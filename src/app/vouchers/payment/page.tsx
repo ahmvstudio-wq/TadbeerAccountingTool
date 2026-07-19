@@ -1,6 +1,6 @@
 'use client'
 import { useEffect, useState, useCallback } from 'react'
-import { Plus, Trash2, AlertCircle, CheckCircle, ArrowLeft, Printer, RefreshCw, FileText } from 'lucide-react'
+import { Plus, Trash2, AlertCircle, CheckCircle, ArrowLeft, Printer, RefreshCw, FileText, Download } from 'lucide-react'
 import Link from 'next/link'
 import { supabase } from '@/lib/supabase/client'
 import { numberToWords } from '@/lib/accounting'
@@ -33,6 +33,7 @@ export default function PaymentVoucherPage() {
   const [postedVoucher, setPostedVoucher] = useState<Voucher | null>(null)
   const [postedJournalLines, setPostedJournalLines] = useState<JournalLine[]>([])
   const [loadingJournal, setLoadingJournal] = useState(false)
+  const [downloading, setDownloading] = useState(false)
 
   const [date, setDate] = useState(new Date().toISOString().split('T')[0])
   const [bankCashId, setBankCashId] = useState('')
@@ -296,13 +297,62 @@ export default function PaymentVoucherPage() {
     finally { setSaving(false) }
   }
 
+  async function handleDownload() {
+    if (!postedVoucher) return
+    setDownloading(true)
+    const vNumber = postedVoucher.voucher_number
+    
+    const loadHtml2Pdf = () => {
+      return new Promise((resolve) => {
+        if ((window as any).html2pdf) {
+          resolve((window as any).html2pdf)
+          return
+        }
+        const script = document.createElement('script')
+        script.src = 'https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js'
+        script.onload = () => resolve((window as any).html2pdf)
+        document.head.appendChild(script)
+      })
+    }
+
+    try {
+      const html2pdf: any = await loadHtml2Pdf()
+      const element = document.getElementById('printable-voucher')
+      if (element) {
+        const opt = {
+          margin:       0.3,
+          filename:     `Payment-${vNumber}.pdf`,
+          image:        { type: 'jpeg', quality: 0.98 },
+          html2canvas:  { scale: 2, useCORS: true },
+          jsPDF:        { unit: 'in', format: 'a4', orientation: 'portrait' }
+        }
+        await html2pdf().set(opt).from(element).save()
+      }
+    } catch (pdfErr) {
+      console.error('Failed to generate PDF download:', pdfErr)
+    } finally {
+      setDownloading(false)
+    }
+  }
+
   function handlePrint() {
     const el = document.getElementById('printable-voucher')
     if (!el) return
     const win = window.open('', '_blank')
     if (!win) return
-    win.document.write(`<html><head><title>Print</title><style>body{font-family:Inter,sans-serif;padding:2rem;color:#1a1a1a}table{width:100%;border-collapse:collapse;margin:1rem 0}th,td{padding:8px 12px;border:1px solid #ddd;font-size:.85rem}@media print{body{padding:0}}</style></head><body>${el.innerHTML}</body></html>`)
-    win.document.close(); win.print()
+    win.document.write(`
+      <html><head><title>Print</title>
+      <style>
+        @page { size: A4 portrait; margin: 15mm; }
+        body { font-family: 'Inter', sans-serif; margin: 0; padding: 0; color: #1a1a1a; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+        @media print {
+          body { margin: 0; padding: 0; }
+          #printable-voucher { border: none !important; }
+        }
+      </style></head><body>${el.outerHTML}</body></html>
+    `)
+    win.document.close()
+    win.print()
   }
 
   function startNew() { setPostedVoucher(null); setPostedJournalLines([]); setSuccess(null) }
@@ -319,6 +369,7 @@ export default function PaymentVoucherPage() {
               <div><h3 style={{ fontSize: '1rem', fontWeight: 700, color: 'var(--color-success)', margin: 0 }}>Payment Posted</h3><p style={{ fontSize: '0.8rem', color: 'var(--color-text-secondary)', margin: 0 }}>{postedVoucher.voucher_number}</p></div>
             </div>
             <div style={{ display: 'flex', gap: '0.5rem' }}>
+              <button className="btn btn-teal" onClick={handleDownload} disabled={downloading}><Download size={16} /> Download</button>
               <button className="btn btn-teal" onClick={handlePrint}><Printer size={16} /> Print</button>
               <button className="btn btn-ghost" onClick={startNew}><RefreshCw size={16} /> New</button>
             </div>
@@ -378,6 +429,7 @@ export default function PaymentVoucherPage() {
               <div className="form-group">
                 <label className="form-label required">Supplier / Payee</label>
                 <select className="form-control" value={supplierId} onChange={e => { setSupplierId(e.target.value); setShowUnpaid(false); setSelectedPurchases({}) }} required>
+                  <option value="">— Select Supplier / Payee —</option>
                   {suppliers.map(s => <option key={s.id} value={s.id}>{s.name} [{s.account_code}]</option>)}
                 </select>
                 {supplierBalance && (

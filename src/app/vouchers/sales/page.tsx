@@ -1,7 +1,7 @@
 'use client'
 import { useEffect, useState, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
-import { Plus, Trash2, AlertCircle, CheckCircle, Printer, Mail, ArrowLeft, RefreshCw } from 'lucide-react'
+import { Plus, Trash2, AlertCircle, CheckCircle, Printer, Mail, ArrowLeft, RefreshCw, Download } from 'lucide-react'
 import Link from 'next/link'
 import { supabase } from '@/lib/supabase/client'
 import { numberToWords } from '@/lib/accounting'
@@ -39,6 +39,7 @@ export default function SalesVoucherPage() {
   const [postedJournalLines, setPostedJournalLines] = useState<JournalLine[]>([])
   const [postedVoucherLines, setPostedVoucherLines] = useState<any[]>([])
   const [loadingJournal, setLoadingJournal] = useState(false)
+  const [downloading, setDownloading] = useState(false)
 
   const [date, setDate] = useState(new Date().toISOString().split('T')[0])
   const [customerId, setCustomerId] = useState('')
@@ -226,11 +227,18 @@ export default function SalesVoucherPage() {
     if (!customerId) { setError('Select a customer.'); return }
     if (!narration.trim()) { setError('Narration is required.'); return }
     
-    if (lines.some(l => !l.ledger_id)) {
-      setError('Please select an account ledger for all lines.')
-      return
+    // Check each line for missing ledger (income account)
+    for (let i = 0; i < lines.length; i++) {
+      if (!lines[i].ledger_id) {
+        setError(`Line ${i + 1}: No income account selected. Please pick a Particulars account or create one with the + button.`)
+        return
+      }
+      if (!lines[i].amount || lines[i].amount <= 0) {
+        setError(`Line ${i + 1}: Amount must be greater than zero.`)
+        return
+      }
     }
-    if (lines.some(l => l.amount <= 0)) { setError('All line items must have a positive amount.'); return }
+
 
     setSaving(true)
     try {
@@ -322,18 +330,56 @@ export default function SalesVoucherPage() {
     const win = window.open('', '_blank')
     if (!win) return
     win.document.write(`
-      <html><head><title>Print Tax Invoice</title>
+      <html><head><title>Print</title>
       <style>
-        body { font-family: 'Inter', sans-serif; padding: 2rem; color: #1a1a1a; }
-        table { width: 100%; border-collapse: collapse; margin: 1rem 0; }
-        th, td { padding: 8px 12px; border: 1px solid #ddd; text-align: left; font-size: 0.85rem; }
-        th { background: #f8f8f8; font-weight: 600; }
-        .print-total-row { font-weight: 700; background: #f0f0f0; }
-        @media print { body { padding: 0; } }
-      </style></head><body>${el.innerHTML}</body></html>
+        @page { size: A4 portrait; margin: 15mm; }
+        body { font-family: 'Inter', sans-serif; margin: 0; padding: 0; color: #1a1a1a; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+        @media print {
+          body { margin: 0; padding: 0; }
+          #printable-voucher { border: none !important; }
+        }
+      </style></head><body>${el.outerHTML}</body></html>
     `)
     win.document.close()
     win.print()
+  }
+
+  async function handleDownload() {
+    if (!postedVoucher) return
+    setDownloading(true)
+    const vNumber = postedVoucher.voucher_number
+    
+    const loadHtml2Pdf = () => {
+      return new Promise((resolve) => {
+        if ((window as any).html2pdf) {
+          resolve((window as any).html2pdf)
+          return
+        }
+        const script = document.createElement('script')
+        script.src = 'https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js'
+        script.onload = () => resolve((window as any).html2pdf)
+        document.head.appendChild(script)
+      })
+    }
+
+    try {
+      const html2pdf: any = await loadHtml2Pdf()
+      const element = document.getElementById('printable-voucher')
+      if (element) {
+        const opt = {
+          margin:       0.3,
+          filename:     `Invoice-${vNumber}.pdf`,
+          image:        { type: 'jpeg', quality: 0.98 },
+          html2canvas:  { scale: 2, useCORS: true },
+          jsPDF:        { unit: 'in', format: 'a4', orientation: 'portrait' }
+        }
+        await html2pdf().set(opt).from(element).save()
+      }
+    } catch (pdfErr) {
+      console.error('Failed to generate PDF download:', pdfErr)
+    } finally {
+      setDownloading(false)
+    }
   }
 
   async function handleEmail() {
@@ -440,6 +486,9 @@ export default function SalesVoucherPage() {
             </div>
             
             <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+              <button className="btn btn-teal" onClick={handleDownload} disabled={downloading} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                <Download size={16} /> {downloading ? 'Downloading...' : 'Download PDF'}
+              </button>
               <button className="btn btn-primary" onClick={handlePrint} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                 <Printer size={16} /> Print Invoice
               </button>
@@ -516,6 +565,7 @@ export default function SalesVoucherPage() {
               <div className="form-group">
                 <label className="form-label required">Customer</label>
                 <select className="form-control" value={customerId} onChange={e => setCustomerId(e.target.value)} required>
+                  <option value="">— Select Customer —</option>
                   {customers.map(c => (
                     <option key={c.id} value={c.id}>{c.name} [{c.account_code}]</option>
                   ))}
@@ -550,16 +600,27 @@ export default function SalesVoucherPage() {
                       <td>{idx + 1}</td>
                       <td>
                         <div style={{ display: 'flex', gap: '4px', alignItems: 'center' }}>
-                          <select className="form-control" value={line.item_id} onChange={e => updateLine(idx, 'item_id', e.target.value)} style={{ fontSize: '0.85rem', flex: 1 }}>
+                          <select 
+                            className="form-control" 
+                            value={line.item_id} 
+                            onChange={e => updateLine(idx, 'item_id', e.target.value)} 
+                            style={{ fontSize: '0.85rem', flex: 1, borderColor: !line.ledger_id ? 'var(--color-danger)' : undefined }}
+                          >
+                            <option value="">— Select Item —</option>
                             {items.map(i => (
                               <option key={i.id} value={i.id}>{i.name} ({i.code || 'No Code'})</option>
                             ))}
                           </select>
                           <button type="button" className="btn btn-outline btn-sm" onClick={() => setShowQuickAddIncome(true)} style={{ padding: '2px 6px', fontSize: '0.9rem', fontWeight: 'bold' }} title="Create Ledger">+</button>
                         </div>
+                        {!line.ledger_id && line.item_id && (
+                          <div style={{ fontSize: '0.72rem', color: 'var(--color-danger)', marginTop: 2 }}>
+                            ⚠ This item has no income account linked — post will fail
+                          </div>
+                        )}
                       </td>
                       <td>
-                        <input className="form-control" placeholder="Description" value={line.description} onChange={e => updateLine(idx, 'description', e.target.value)} style={{ fontSize: '0.85rem' }} />
+                        <textarea className="form-control" placeholder="Description" value={line.description} onChange={e => updateLine(idx, 'description', e.target.value)} style={{ fontSize: '0.85rem', resize: 'vertical', minHeight: '38px', padding: '8px' }} />
                       </td>
                       <td>
                         <input type="number" step="0.001" min="0" className="form-control" style={{ textAlign: 'right', fontSize: '0.85rem' }} value={line.quantity || ''} onChange={e => updateLine(idx, 'quantity', Number(e.target.value))} />

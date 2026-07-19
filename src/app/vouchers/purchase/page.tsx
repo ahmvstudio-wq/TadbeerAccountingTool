@@ -1,12 +1,13 @@
 'use client'
 import { useEffect, useState, useCallback } from 'react'
-import { Plus, Trash2, AlertCircle, CheckCircle, ArrowLeft } from 'lucide-react'
+import { Plus, Trash2, AlertCircle, CheckCircle, ArrowLeft, Printer, RefreshCw, Download } from 'lucide-react'
 import Link from 'next/link'
 import { supabase } from '@/lib/supabase/client'
 import { numberToWords } from '@/lib/accounting'
-import type { Ledger, Item } from '@/lib/types'
+import type { Ledger, Item, Voucher, JournalLine } from '@/lib/types'
 import { useUIStore } from '@/store/ui'
 import { OMRSymbol } from '@/components/ui/OMRSymbol'
+import { PrintableVoucher } from '@/components/voucher/PrintableVoucher'
 
 interface LineItem {
   item_id?: string
@@ -29,6 +30,12 @@ export default function PurchaseVoucherPage() {
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [success, setSuccess] = useState<string | null>(null)
+  const [postedVoucher, setPostedVoucher] = useState<Voucher | null>(null)
+  const [postedJournalLines, setPostedJournalLines] = useState<JournalLine[]>([])
+  const [postedVoucherLines, setPostedVoucherLines] = useState<any[]>([])
+  const [loadingJournal, setLoadingJournal] = useState(false)
+  const [companySettings, setCompanySettings] = useState<any>(null)
+  const [downloading, setDownloading] = useState(false)
 
   const [date, setDate] = useState(new Date().toISOString().split('T')[0])
   const [supplierId, setSupplierId] = useState('')
@@ -48,14 +55,16 @@ export default function PurchaseVoucherPage() {
   const loadData = useCallback(async () => {
     setLoading(true)
     try {
-      const [{ data: ledg }, { data: itms }] = await Promise.all([
+      const [{ data: ledg }, { data: itms }, { data: settings }] = await Promise.all([
         (supabase as any).from('ledgers').select('*, group:groups(id, name, nature)').eq('company_id', companyId).order('name'),
-        (supabase as any).from('items').select('*').eq('company_id', companyId).order('name')
+        (supabase as any).from('items').select('*').eq('company_id', companyId).order('name'),
+        (supabase as any).from('settings').select('*').eq('company_id', companyId).maybeSingle()
       ])
       const fetchedLedgers = ledg ?? []
       const fetchedItems = itms ?? []
       setLedgers(fetchedLedgers)
       setItems(fetchedItems)
+      setCompanySettings(settings)
 
       // Auto-select first supplier
       const suppliersList = fetchedLedgers.filter((l: any) => {
@@ -213,6 +222,7 @@ export default function PurchaseVoucherPage() {
     setSuccess(null)
 
     if (!supplierId) { setError('Select a supplier.'); return }
+    if (!supplierInvoiceRef.trim()) { setError('Supplier Invoice Ref is required.'); return }
     if (!narration.trim()) { setError('Narration is required.'); return }
     
     if (lines.some(l => !l.ledger_id)) {
@@ -260,8 +270,18 @@ export default function PurchaseVoucherPage() {
       }
 
       const voucher = await res.json()
+      setPostedVoucher(voucher)
       setSuccess(`Purchase Voucher ${voucher.voucher_number} posted successfully!`)
       
+      setLoadingJournal(true)
+      const [{ data: jLines }, { data: vlLines }] = await Promise.all([
+        (supabase as any).from('journal_lines').select('*, ledger:ledgers(name, account_code, classification)').eq('voucher_id', voucher.id).order('type', { ascending: true }),
+        (supabase as any).from('voucher_lines').select('*, ledger:ledgers(name, account_code)').eq('voucher_id', voucher.id)
+      ])
+      setPostedJournalLines(jLines ?? [])
+      setPostedVoucherLines(vlLines ?? [])
+      setLoadingJournal(false)
+
       const { data: balData } = await (supabase as any).rpc('get_ledger_balance', { p_ledger_id: supplierId })
       if (balData && balData.length > 0) {
         setSupplierBalance({ balance: Number(balData[0].current_balance), type: balData[0].balance_type })
@@ -288,8 +308,99 @@ export default function PurchaseVoucherPage() {
     }
   }
 
+  async function handleDownload() {
+    if (!postedVoucher) return
+    setDownloading(true)
+    const vNumber = postedVoucher.voucher_number
+    
+    const loadHtml2Pdf = () => {
+      return new Promise((resolve) => {
+        if ((window as any).html2pdf) {
+          resolve((window as any).html2pdf)
+          return
+        }
+        const script = document.createElement('script')
+        script.src = 'https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js'
+        script.onload = () => resolve((window as any).html2pdf)
+        document.head.appendChild(script)
+      })
+    }
+
+    try {
+      const html2pdf: any = await loadHtml2Pdf()
+      const element = document.getElementById('printable-voucher')
+      if (element) {
+        const opt = {
+          margin:       0.3,
+          filename:     `Purchase-${vNumber}.pdf`,
+          image:        { type: 'jpeg', quality: 0.98 },
+          html2canvas:  { scale: 2, useCORS: true },
+          jsPDF:        { unit: 'in', format: 'a4', orientation: 'portrait' }
+        }
+        await html2pdf().set(opt).from(element).save()
+      }
+    } catch (pdfErr) {
+      console.error('Failed to generate PDF download:', pdfErr)
+    } finally {
+      setDownloading(false)
+    }
+  }
+
+  function handlePrint() {
+    const el = document.getElementById('printable-voucher')
+    if (!el) return
+    const win = window.open('', '_blank')
+    if (!win) return
+    win.document.write(`
+      <html><head><title>Print</title>
+      <style>
+        @page { size: A4 portrait; margin: 15mm; }
+        body { font-family: 'Inter', sans-serif; margin: 0; padding: 0; color: #1a1a1a; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+        @media print {
+          body { margin: 0; padding: 0; }
+          #printable-voucher { border: none !important; }
+        }
+      </style></head><body>${el.outerHTML}</body></html>
+    `)
+    win.document.close()
+    win.print()
+  }
+
+  function startNew() {
+    setPostedVoucher(null)
+    setPostedJournalLines([])
+    setPostedVoucherLines([])
+    setSuccess(null)
+  }
+
   if (loading) {
     return <div style={{ padding: '2rem' }}><div className="skeleton" style={{ height: 400, borderRadius: 12 }} /></div>
+  }
+
+  if (postedVoucher) {
+    return (
+      <div style={{ maxWidth: 840, margin: '0 auto', padding: '1rem 0 3rem' }}>
+        <div className="card" style={{ border: '1px solid var(--color-success)', background: 'var(--color-surface)', marginBottom: '1.5rem' }}>
+          <div className="card-body" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '1rem' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+              <div style={{ width: 40, height: 40, background: 'rgba(34,197,94,0.1)', color: '#22c55e', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><CheckCircle size={22} /></div>
+              <div><h3 style={{ fontSize: '1rem', fontWeight: 700, color: 'var(--color-success)', margin: 0 }}>Purchase Posted</h3><p style={{ fontSize: '0.8rem', color: 'var(--color-text-secondary)', margin: 0 }}>{postedVoucher.voucher_number}</p></div>
+            </div>
+            <div style={{ display: 'flex', gap: '0.5rem' }}>
+              <button className="btn btn-teal" onClick={handleDownload} disabled={downloading} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                <Download size={16} /> Download
+              </button>
+              <button className="btn btn-teal" onClick={handlePrint} style={{ display: 'flex', alignItems: 'center', gap: 6 }}><Printer size={16} /> Print</button>
+              <button className="btn btn-ghost" onClick={startNew} style={{ display: 'flex', alignItems: 'center', gap: 6 }}><RefreshCw size={16} /> New</button>
+            </div>
+          </div>
+        </div>
+        <div className="card" style={{ padding: '2.5rem' }}>
+          {loadingJournal ? <div style={{ textAlign: 'center', padding: '3rem' }}>Loading...</div> :
+            <PrintableVoucher voucher={postedVoucher} journalLines={postedJournalLines} voucherLines={postedVoucherLines} companySettings={companySettings} currency={postedVoucher.currency || 'OMR'} />}
+        </div>
+      </div>
+    )
   }
 
   return (
@@ -320,6 +431,7 @@ export default function PurchaseVoucherPage() {
               <div className="form-group">
                 <label className="form-label required">Supplier</label>
                 <select className="form-control" value={supplierId} onChange={e => setSupplierId(e.target.value)} required>
+                  <option value="">— Select Supplier —</option>
                   {suppliers.map(s => (
                     <option key={s.id} value={s.id}>{s.name} [{s.account_code}]</option>
                   ))}
@@ -331,8 +443,8 @@ export default function PurchaseVoucherPage() {
                 )}
               </div>
               <div className="form-group">
-                <label className="form-label">Supplier Invoice Ref</label>
-                <input className="form-control" value={supplierInvoiceRef} onChange={e => setSupplierInvoiceRef(e.target.value)} placeholder="e.g. SUP-INV-8472" />
+                <label className="form-label required">Supplier Invoice Ref</label>
+                <input className="form-control" value={supplierInvoiceRef} onChange={e => setSupplierInvoiceRef(e.target.value)} placeholder="e.g. SUP-INV-8472" required />
               </div>
             </div>
 
@@ -366,7 +478,7 @@ export default function PurchaseVoucherPage() {
                         </div>
                       </td>
                       <td>
-                        <input className="form-control" placeholder="Description" value={line.description} onChange={e => updateLine(idx, 'description', e.target.value)} style={{ fontSize: '0.85rem' }} />
+                        <textarea className="form-control" placeholder="Description" value={line.description} onChange={e => updateLine(idx, 'description', e.target.value)} style={{ fontSize: '0.85rem', resize: 'vertical', minHeight: '38px', padding: '8px' }} />
                       </td>
                       <td>
                         <input type="number" step="0.001" min="0" className="form-control" style={{ textAlign: 'right', fontSize: '0.85rem' }} value={line.quantity || ''} onChange={e => updateLine(idx, 'quantity', Number(e.target.value))} />

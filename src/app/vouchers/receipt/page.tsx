@@ -1,6 +1,6 @@
 'use client'
 import { useEffect, useState, useCallback } from 'react'
-import { Plus, Trash2, AlertCircle, CheckCircle, ArrowLeft, Printer, RefreshCw, FileText } from 'lucide-react'
+import { Plus, Trash2, AlertCircle, CheckCircle, ArrowLeft, Printer, RefreshCw, FileText, Download } from 'lucide-react'
 import Link from 'next/link'
 import { supabase } from '@/lib/supabase/client'
 import { numberToWords } from '@/lib/accounting'
@@ -33,6 +33,7 @@ export default function ReceiptVoucherPage() {
   const [postedVoucher, setPostedVoucher] = useState<Voucher | null>(null)
   const [postedJournalLines, setPostedJournalLines] = useState<JournalLine[]>([])
   const [loadingJournal, setLoadingJournal] = useState(false)
+  const [downloading, setDownloading] = useState(false)
 
   const [date, setDate] = useState(new Date().toISOString().split('T')[0])
   const [customerId, setCustomerId] = useState('')
@@ -42,9 +43,7 @@ export default function ReceiptVoucherPage() {
   const [narration, setNarration] = useState('')
   const [notes, setNotes] = useState('')
 
-  const [lines, setLines] = useState<LineItem[]>([
-    { ledger_id: '', description: '', quantity: 1, rate: 0, amount: 0, vat_rate: 0, vat_amount: 0 },
-  ])
+  const [amount, setAmount] = useState<string>('')
 
   // Unpaid invoices dropdown
   const [showUnpaid, setShowUnpaid] = useState(false)
@@ -82,13 +81,8 @@ export default function ReceiptVoucherPage() {
         setBankCashId(bankCashList[0].id)
       }
 
-      // Auto-select first income ledger for lines
-      const incomeList = fetchedLedgers.filter((l: any) => { const n = (l.group as any)?.nature; return n === 'INCOME' || n === 'LIABILITY' })
-      if (incomeList.length > 0) {
-        setLines([
-          { ledger_id: incomeList[0].id, description: 'Receipt', quantity: 1, rate: 0, amount: 0, vat_rate: 0, vat_amount: 0 }
-        ])
-      }
+      // Not auto-adding a line item anymore since we removed lines
+
     } catch (err) { console.error(err) }
     setLoading(false)
   }, [companyId])
@@ -107,8 +101,8 @@ export default function ReceiptVoucherPage() {
     setLoadingUnpaid(false)
   }
 
-  const subtotal = lines.reduce((s, l) => s + Number(l.amount || 0), 0)
-  const vatTotal = lines.reduce((s, l) => s + Number(l.vat_amount || 0), 0)
+  const subtotal = Number(amount) || 0
+  const vatTotal = 0
   const grandTotal = subtotal + vatTotal
 
   function selectInvoice(inv: any) {
@@ -160,43 +154,6 @@ export default function ReceiptVoucherPage() {
   const totalAllocated = Object.values(selectedInvoices).reduce((s, a) => s + a, 0)
   const unallocated = Math.round((grandTotal - totalAllocated) * 1000) / 1000
 
-  function updateLine(idx: number, field: keyof LineItem, value: any) {
-    setLines(prev => {
-      const next = [...prev]
-      next[idx] = { ...next[idx], [field]: value }
-
-      if (field === 'quantity' || field === 'rate') {
-        const qty = Number(next[idx].quantity || 0)
-        const rate = Number(next[idx].rate || 0)
-        next[idx].amount = Math.round(qty * rate * 1000) / 1000
-      }
-
-      if (field === 'amount' || field === 'vat_rate' || field === 'quantity' || field === 'rate') {
-        const amt = Number(next[idx].amount || 0)
-        const vatRate = next[idx].vat_rate != null ? Number(next[idx].vat_rate) : 0
-        next[idx].vat_amount = Math.round(amt * vatRate / 100 * 1000) / 1000
-      }
-      return next
-    })
-  }
-
-  function addLine() {
-    const defaultIncome = incomeAccounts[0]
-    setLines(prev => [...prev, { 
-      ledger_id: defaultIncome?.id || '', 
-      description: 'Receipt', 
-      quantity: 1, 
-      rate: 0, 
-      amount: 0, 
-      vat_rate: 0, 
-      vat_amount: 0 
-    }])
-  }
-
-  function removeLine(idx: number) {
-    if (lines.length <= 1) return
-    setLines(prev => prev.filter((_, i) => i !== idx))
-  }
 
   async function handleQuickAddIncome(e: React.FormEvent) {
     e.preventDefault()
@@ -241,7 +198,6 @@ export default function ReceiptVoucherPage() {
     setError(null); setSuccess(null)
     if (!customerId) { setError('Select a customer.'); return }
     if (!bankCashId) { setError('Select payment method.'); return }
-    if (lines.some(l => !l.ledger_id)) { setError('Please select an account for all lines.'); return }
     if (grandTotal <= 0) { setError('Enter a positive amount.'); return }
     if (!narration.trim()) { setError('Narration is required.'); return }
 
@@ -265,15 +221,7 @@ export default function ReceiptVoucherPage() {
           company_id: companyId, currency,
           allocations: allocArray,
           on_account_amount: unallocated > 0.001 ? unallocated : 0,
-          lines: lines.map(l => ({ 
-            ledger_id: l.ledger_id, 
-            description: l.description || 'Receipt', 
-            amount: l.amount, 
-            quantity: l.quantity,
-            rate: l.rate,
-            vat_rate: l.vat_rate, 
-            vat_amount: l.vat_amount 
-          })),
+          lines: [],
         }),
       })
 
@@ -290,11 +238,48 @@ export default function ReceiptVoucherPage() {
       setLoadingJournal(false)
 
       setRef(''); setNarration(''); setNotes('')
-      const defaultIncome = incomeAccounts[0]
-      setLines([{ ledger_id: defaultIncome?.id || '', description: 'Receipt', quantity: 1, rate: 0, amount: 0, vat_rate: 0, vat_amount: 0 }])
+      setAmount('')
       setSelectedInvoices({}); setShowUnpaid(false); setUnpaidInvoices([])
     } catch (err: any) { setError(err.message || 'Network error.') }
     finally { setSaving(false) }
+  }
+
+  async function handleDownload() {
+    if (!postedVoucher) return
+    setDownloading(true)
+    const vNumber = postedVoucher.voucher_number
+    
+    const loadHtml2Pdf = () => {
+      return new Promise((resolve) => {
+        if ((window as any).html2pdf) {
+          resolve((window as any).html2pdf)
+          return
+        }
+        const script = document.createElement('script')
+        script.src = 'https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js'
+        script.onload = () => resolve((window as any).html2pdf)
+        document.head.appendChild(script)
+      })
+    }
+
+    try {
+      const html2pdf: any = await loadHtml2Pdf()
+      const element = document.getElementById('printable-voucher')
+      if (element) {
+        const opt = {
+          margin:       0.3,
+          filename:     `Receipt-${vNumber}.pdf`,
+          image:        { type: 'jpeg', quality: 0.98 },
+          html2canvas:  { scale: 2, useCORS: true },
+          jsPDF:        { unit: 'in', format: 'a4', orientation: 'portrait' }
+        }
+        await html2pdf().set(opt).from(element).save()
+      }
+    } catch (pdfErr) {
+      console.error('Failed to generate PDF download:', pdfErr)
+    } finally {
+      setDownloading(false)
+    }
   }
 
   function handlePrint() {
@@ -302,8 +287,19 @@ export default function ReceiptVoucherPage() {
     if (!el) return
     const win = window.open('', '_blank')
     if (!win) return
-    win.document.write(`<html><head><title>Print</title><style>body{font-family:Inter,sans-serif;padding:2rem;color:#1a1a1a}table{width:100%;border-collapse:collapse;margin:1rem 0}th,td{padding:8px 12px;border:1px solid #ddd;font-size:.85rem}@media print{body{padding:0}}</style></head><body>${el.innerHTML}</body></html>`)
-    win.document.close(); win.print()
+    win.document.write(`
+      <html><head><title>Print</title>
+      <style>
+        @page { size: A4 portrait; margin: 15mm; }
+        body { font-family: 'Inter', sans-serif; margin: 0; padding: 0; color: #1a1a1a; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+        @media print {
+          body { margin: 0; padding: 0; }
+          #printable-voucher { border: none !important; }
+        }
+      </style></head><body>${el.outerHTML}</body></html>
+    `)
+    win.document.close()
+    win.print()
   }
 
   function startNew() { setPostedVoucher(null); setPostedJournalLines([]); setSuccess(null) }
@@ -323,6 +319,7 @@ export default function ReceiptVoucherPage() {
               </div>
             </div>
             <div style={{ display: 'flex', gap: '0.5rem' }}>
+              <button className="btn btn-teal" onClick={handleDownload} disabled={downloading}><Download size={16} /> Download</button>
               <button className="btn btn-teal" onClick={handlePrint}><Printer size={16} /> Print</button>
               <button className="btn btn-ghost" onClick={startNew}><RefreshCw size={16} /> New</button>
             </div>
@@ -476,70 +473,10 @@ export default function ReceiptVoucherPage() {
               </div>
             )}
 
-            {/* Redesigned Receipt Lines Table - Matching Purchase design exactly */}
-            <div style={{ overflowX: 'auto', marginTop: '1rem' }}>
-              <table className="data-table" style={{ width: '100%' }}>
-                <thead>
-                  <tr>
-                    <th style={{ width: '3%' }}>#</th>
-                    <th style={{ width: '25%' }}>Particulars</th>
-                    <th style={{ width: '18%' }}>Description</th>
-                    <th style={{ width: '8%', textAlign: 'right' }}>Qty</th>
-                    <th style={{ width: '10%', textAlign: 'right' }}>Rate</th>
-                    <th style={{ width: '8%', textAlign: 'right' }}>VAT %</th>
-                    <th style={{ width: '10%', textAlign: 'right' }}>VAT Amt</th>
-                    <th style={{ width: '12%', textAlign: 'right' }}>Amount</th>
-                    <th style={{ width: '4%' }}></th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {lines.map((line, idx) => (
-                    <tr key={idx}>
-                      <td>{idx + 1}</td>
-                      <td>
-                        <div style={{ display: 'flex', gap: '4px', alignItems: 'center' }}>
-                          <select className="form-control" value={line.ledger_id} onChange={e => updateLine(idx, 'ledger_id', e.target.value)} style={{ fontSize: '0.85rem', flex: 1 }}>
-                            {incomeAccounts.map(a => (
-                              <option key={a.id} value={a.id}>{a.name} [{a.account_code}]</option>
-                            ))}
-                          </select>
-                          <button type="button" className="btn btn-outline btn-sm" onClick={() => setShowQuickAddIncome(true)} style={{ padding: '2px 6px', fontSize: '0.9rem', fontWeight: 'bold' }} title="Create Ledger">+</button>
-                        </div>
-                      </td>
-                      <td>
-                        <input className="form-control" placeholder="Description" value={line.description} onChange={e => updateLine(idx, 'description', e.target.value)} style={{ fontSize: '0.85rem' }} />
-                      </td>
-                      <td>
-                        <input type="number" step="0.001" min="0" className="form-control" style={{ textAlign: 'right', fontSize: '0.85rem' }} value={line.quantity || ''} onChange={e => updateLine(idx, 'quantity', Number(e.target.value))} />
-                      </td>
-                      <td>
-                        <input type="number" step="0.001" min="0" className="form-control" style={{ textAlign: 'right', fontSize: '0.85rem' }} value={line.rate || ''} onChange={e => updateLine(idx, 'rate', Number(e.target.value))} />
-                      </td>
-                      <td>
-                        <input type="number" step="0.01" min="0" className="form-control" style={{ textAlign: 'right', fontSize: '0.85rem' }} value={line.vat_rate} onChange={e => updateLine(idx, 'vat_rate', Number(e.target.value))} />
-                      </td>
-                      <td>
-                        <input type="number" step="0.001" min="0" className="form-control" style={{ textAlign: 'right', fontSize: '0.85rem', fontWeight: 500 }} value={line.vat_amount} onChange={e => updateLine(idx, 'vat_amount', Number(e.target.value))} />
-                      </td>
-                      <td>
-                        <input type="number" step="0.001" min="0" className="form-control" style={{ textAlign: 'right', fontSize: '0.85rem' }} value={line.amount || ''} onChange={e => updateLine(idx, 'amount', Number(e.target.value))} />
-                      </td>
-                      <td>
-                        {lines.length > 1 && (
-                          <button type="button" className="btn btn-ghost btn-sm" onClick={() => removeLine(idx)} style={{ color: 'var(--color-danger)', padding: '4px' }}>
-                            <Trash2 size={14} />
-                          </button>
-                        )}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+            <div className="form-group" style={{ marginTop: '1.5rem', maxWidth: 300 }}>
+              <label className="form-label required">Total Amount Received</label>
+              <input type="number" step="0.001" min="0" className="form-control" style={{ fontSize: '1.25rem', fontWeight: 700 }} value={amount} onChange={e => setAmount(e.target.value)} required />
             </div>
-
-            <button type="button" className="btn btn-outline btn-sm" onClick={addLine} style={{ marginTop: '0.75rem' }}>
-              <Plus size={14} /> Add Line Item
-            </button>
 
             <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '1.5rem' }}>
               <div style={{ width: 300 }}>

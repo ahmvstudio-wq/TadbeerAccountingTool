@@ -1,6 +1,6 @@
 'use client'
 import { useEffect, useState, useCallback } from 'react'
-import { Search, Eye, Trash2, AlertCircle, Printer, X, Mail } from 'lucide-react'
+import { Search, Eye, Trash2, AlertCircle, Printer, X, Mail, Download } from 'lucide-react'
 import { supabase as rawSupabase } from '@/lib/supabase/client'
 const supabase = rawSupabase as any
 import type { Voucher, VoucherType, JournalLine } from '@/lib/types'
@@ -25,6 +25,7 @@ export default function VouchersPage() {
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
   const [typeFilter, setTypeFilter] = useState<VoucherType | ''>('')
+  const [downloading, setDownloading] = useState(false)
 
   // Preview modal
   const [selectedVoucher, setSelectedVoucher] = useState<Voucher | null>(null)
@@ -138,6 +139,46 @@ export default function VouchersPage() {
     } catch { setDeleteError('Network error.') }
   }
 
+  async function handleDownload() {
+    if (!selectedVoucher) return
+    setDownloading(true)
+    const vNumber = selectedVoucher.voucher_number
+    const vType = selectedVoucher.type
+    const label = vType === 'SALE' ? 'Invoice' : 'Voucher'
+
+    const loadHtml2Pdf = () => {
+      return new Promise((resolve) => {
+        if ((window as any).html2pdf) {
+          resolve((window as any).html2pdf)
+          return
+        }
+        const script = document.createElement('script')
+        script.src = 'https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js'
+        script.onload = () => resolve((window as any).html2pdf)
+        document.head.appendChild(script)
+      })
+    }
+
+    try {
+      const html2pdf: any = await loadHtml2Pdf()
+      const element = document.getElementById('printable-voucher')
+      if (element) {
+        const opt = {
+          margin:       0.3,
+          filename:     `${label}-${vNumber}.pdf`,
+          image:        { type: 'jpeg', quality: 0.98 },
+          html2canvas:  { scale: 2, useCORS: true },
+          jsPDF:        { unit: 'in', format: 'a4', orientation: 'portrait' }
+        }
+        await html2pdf().set(opt).from(element).save()
+      }
+    } catch (pdfErr) {
+      console.error('Failed to generate PDF download:', pdfErr)
+    } finally {
+      setDownloading(false)
+    }
+  }
+
   function handlePrint() {
     const el = document.getElementById('printable-voucher')
     if (!el) return
@@ -146,20 +187,13 @@ export default function VouchersPage() {
     win.document.write(`
       <html><head><title>Print</title>
       <style>
-        body { font-family: 'Inter', sans-serif; padding: 2rem; color: #1a1a1a; }
-        table { width: 100%; border-collapse: collapse; margin: 1rem 0; }
-        th, td { padding: 8px 12px; border: 1px solid #ddd; text-align: left; font-size: 0.85rem; }
-        th { background: #f8f8f8; font-weight: 600; }
-        .print-header { display: flex; justify-content: space-between; margin-bottom: 1rem; }
-        .print-company-name { font-size: 1.3rem; font-weight: 700; }
-        .print-voucher-title { font-size: 1.1rem; font-weight: 700; text-transform: uppercase; }
-        .print-total-row { font-weight: 700; background: #f0f0f0; }
-        .print-signature-section { display: flex; justify-content: space-between; margin-top: 3rem; }
-        .print-signature-box { text-align: center; width: 22%; }
-        .print-signature-line { border-top: 1px solid #333; margin-bottom: 4px; }
-        .print-divider { border: none; border-top: 2px solid #333; margin: 1rem 0; }
-        @media print { body { padding: 0; } }
-      </style></head><body>${el.innerHTML}</body></html>
+        @page { size: A4 portrait; margin: 15mm; }
+        body { font-family: 'Inter', sans-serif; margin: 0; padding: 0; color: #1a1a1a; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+        @media print {
+          body { margin: 0; padding: 0; }
+          #printable-voucher { border: none !important; }
+        }
+      </style></head><body>${el.outerHTML}</body></html>
     `)
     win.document.close()
     win.print()
@@ -331,6 +365,9 @@ export default function VouchersPage() {
             <div className="modal-header">
               <h3>{selectedVoucher.voucher_number} — Journal Preview</h3>
               <div style={{ display: 'flex', gap: '0.5rem' }}>
+                <button className="btn btn-outline btn-sm" onClick={handleDownload} disabled={downloading} style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                  <Download size={14} /> {downloading ? 'Downloading...' : 'Download'}
+                </button>
                 <button className="btn btn-outline btn-sm" onClick={handleEmail} style={{ display: 'flex', alignItems: 'center', gap: 4 }}><Mail size={14} /> Email</button>
                 <button className="btn btn-outline btn-sm" onClick={handlePrint}><Printer size={14} /> Print</button>
                 <button className="btn btn-ghost btn-sm" onClick={() => setSelectedVoucher(null)}><X size={16} /></button>
@@ -519,6 +556,15 @@ export default function VouchersPage() {
                         {uploadingAttachment && <span style={{ fontSize: '0.8rem', color: '#718096' }}>Uploading...</span>}
                       </div>
                     )}
+                  </div>
+
+                  <div style={{ display: 'flex', gap: '0.5rem', justifyContent: 'flex-end', borderTop: '1px solid #E2E8F0', paddingTop: '1rem', marginTop: '1.5rem' }}>
+                    <button className="btn btn-outline btn-sm" onClick={handleDownload} disabled={downloading} style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                      <Download size={14} /> {downloading ? 'Downloading...' : 'Download'}
+                    </button>
+                    <button className="btn btn-outline btn-sm" onClick={handleEmail} style={{ display: 'flex', alignItems: 'center', gap: 4 }}><Mail size={14} /> Email</button>
+                    <button className="btn btn-outline btn-sm" onClick={handlePrint}><Printer size={14} /> Print</button>
+                    <button className="btn btn-ghost btn-sm" onClick={() => setSelectedVoucher(null)} style={{ display: 'flex', alignItems: 'center', gap: 4 }}><X size={16} /> Close</button>
                   </div>
                 </>
               )}
