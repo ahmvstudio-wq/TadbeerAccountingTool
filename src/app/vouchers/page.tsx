@@ -104,7 +104,29 @@ export default function VouchersPage() {
     ])
     
     setJournalLines(jLines ?? [])
-    setVoucherLines(vLines ?? [])
+    
+    // If no voucher_lines saved, reconstruct from journal_lines for SALE/PURCHASE
+    if ((!vLines || vLines.length === 0) && (jLines ?? []).length > 0 && (voucher.type === 'SALE' || voucher.type === 'PURCHASE')) {
+      const jLinesFiltered = (jLines ?? []).filter((jl: any) => {
+        // For SALE: Cr lines are the income lines; for PURCHASE: Dr lines are the expense lines
+        if (voucher.type === 'SALE') return jl.type === 'Cr' && !jl.ledger?.name?.toLowerCase().includes('vat')
+        return jl.type === 'Dr' && !jl.ledger?.name?.toLowerCase().includes('vat')
+      })
+      const reconstructedLines = jLinesFiltered.map((jl: any) => ({
+        id: jl.id,
+        ledger_id: jl.ledger_id,
+        description: jl.narration || jl.ledger?.name || 'Service',
+        quantity: 1,
+        rate: Number(jl.amount),
+        amount: Number(jl.amount),
+        vat_rate: 0,
+        vat_amount: 0,
+        ledger: jl.ledger,
+      }))
+      setVoucherLines(reconstructedLines)
+    } else {
+      setVoucherLines(vLines ?? [])
+    }
     if (pLedger?.data) {
       setPartyLedger(pLedger.data)
     }
@@ -139,43 +161,27 @@ export default function VouchersPage() {
     } catch { setDeleteError('Network error.') }
   }
 
-  async function handleDownload() {
+  function handleDownload() {
     if (!selectedVoucher) return
-    setDownloading(true)
-    const vNumber = selectedVoucher.voucher_number
-    const vType = selectedVoucher.type
-    const label = vType === 'SALE' ? 'Invoice' : 'Voucher'
-
-    const loadHtml2Pdf = () => {
-      return new Promise((resolve) => {
-        if ((window as any).html2pdf) {
-          resolve((window as any).html2pdf)
-          return
-        }
-        const script = document.createElement('script')
-        script.src = 'https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js'
-        script.onload = () => resolve((window as any).html2pdf)
-        document.head.appendChild(script)
-      })
-    }
-
-    try {
-      const html2pdf: any = await loadHtml2Pdf()
-      const element = document.getElementById('printable-voucher')
-      if (element) {
-        const opt = {
-          margin:       0.3,
-          filename:     `${label}-${vNumber}.pdf`,
-          image:        { type: 'jpeg', quality: 0.98 },
-          html2canvas:  { scale: 2, useCORS: true },
-          jsPDF:        { unit: 'in', format: 'a4', orientation: 'portrait' }
-        }
-        await html2pdf().set(opt).from(element).save()
+    const el = document.getElementById('printable-voucher')
+    if (el) {
+      const win = window.open('', '_blank')
+      if (win) {
+        win.document.write(
+          '<html><head><title>Print</title>' +
+          '<style>' +
+          '@page { size: A4 portrait; margin: 10mm; }' +
+          '* { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }' +
+          'body { font-family: Inter, sans-serif; margin: 0; padding: 0; color: #1a1a1a; }' +
+          'table { page-break-inside: auto; width: 100%; }' +
+          'tr { page-break-inside: avoid; }' +
+          'thead { display: table-header-group; }' +
+          'img { max-width: 100%; height: auto; }' +
+          '</style></head><body>' + el.outerHTML + '</body></html>'
+        )
+        win.document.close()
+        setTimeout(() => { win.print() }, 500)
       }
-    } catch (pdfErr) {
-      console.error('Failed to generate PDF download:', pdfErr)
-    } finally {
-      setDownloading(false)
     }
   }
 
@@ -223,35 +229,25 @@ export default function VouchersPage() {
     const vNumber = selectedVoucher.voucher_number
     const vType = selectedVoucher.type
 
-    // 1. Load html2pdf dynamically from CDN
-    const loadHtml2Pdf = () => {
-      return new Promise((resolve) => {
-        if ((window as any).html2pdf) {
-          resolve((window as any).html2pdf)
-          return
-        }
-        const script = document.createElement('script')
-        script.src = 'https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js'
-        script.onload = () => resolve((window as any).html2pdf)
-        document.head.appendChild(script)
-      })
-    }
-
-    try {
-      const html2pdf: any = await loadHtml2Pdf()
-      const element = document.getElementById('printable-voucher')
-      if (element) {
-        const opt = {
-          margin:       0.3,
-          filename:     `Voucher-${vNumber}.pdf`,
-          image:        { type: 'jpeg', quality: 0.98 },
-          html2canvas:  { scale: 2, useCORS: true },
-          jsPDF:        { unit: 'in', format: 'a4', orientation: 'portrait' }
-        }
-        await html2pdf().set(opt).from(element).save()
+    const el = document.getElementById('printable-voucher')
+    if (el) {
+      const win = window.open('', '_blank')
+      if (win) {
+        win.document.write(
+          '<html><head><title>Print</title>' +
+          '<style>' +
+          '@page { size: A4 portrait; margin: 10mm; }' +
+          '* { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }' +
+          'body { font-family: Inter, sans-serif; margin: 0; padding: 0; color: #1a1a1a; }' +
+          'table { page-break-inside: auto; width: 100%; }' +
+          'tr { page-break-inside: avoid; }' +
+          'thead { display: table-header-group; }' +
+          'img { max-width: 100%; height: auto; }' +
+          '</style></head><body>' + el.outerHTML + '</body></html>'
+        )
+        win.document.close()
+        setTimeout(() => { win.print() }, 500)
       }
-    } catch (pdfErr) {
-      console.error('Failed to generate PDF download:', pdfErr)
     }
 
     const label = vType === 'SALE' ? 'Tax Invoice' : 'Voucher'

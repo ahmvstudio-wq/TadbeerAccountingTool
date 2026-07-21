@@ -168,10 +168,10 @@ function SignatureFooter({ type }: { type: string }) {
   return (
     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', marginTop: '0.5rem', pageBreakInside: 'avoid', breakInside: 'avoid' }}>
       <div style={{ width: '130px', textAlign: 'center' }}>
-        <img src="/reference_signature.png" alt="Signature" style={{ width: 130, height: 'auto', display: 'block', margin: '0 auto' }} />
+        <img src="/reference_signature.png" alt="Signature" style={{ width: 200, height: 'auto', display: 'block', margin: '0 auto' }} />
       </div>
       <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', marginRight: '2rem' }}>
-        <img src="/reference_stamp.png" alt="Company Stamp" style={{ width: 130, height: 'auto', display: 'block' }} />
+        <img src="/reference_stamp.png" alt="Company Stamp" style={{ width: 160, height: 'auto', display: 'block' }} />
         <span style={{ fontSize: '0.65rem', fontWeight: 700, color: '#718096', marginTop: '2px' }}>Company Stamp</span>
       </div>
     </div>
@@ -251,28 +251,28 @@ export function PrintableVoucher({ voucher, journalLines, voucherLines = [], com
       {/* Repeating Header */}
       <thead style={{ display: 'table-header-group' }}>
         <tr>
-          <td style={{ padding: '1rem 1rem 0 1rem', border: 'none' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '1rem' }}>
-              <div>
-                <h2 style={{ fontSize: '1.25rem', fontWeight: 800, color: primaryColor, margin: '0 0 4px', letterSpacing: '-0.02em', textTransform: 'uppercase' }}>
+          <td style={{ padding: '0.5rem 1rem 0 1rem', border: 'none' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '2rem', marginBottom: '1rem' }}>
+              <div style={{ flex: 1 }}>
+                <h2 style={{ fontSize: '1rem', fontWeight: 800, color: primaryColor, margin: '0 0 3px', letterSpacing: '-0.02em', textTransform: 'uppercase' }}>
                   {companyName}
                 </h2>
-                <p style={{ margin: '0 0 2px', fontSize: '0.72rem', color: '#4A5568', fontWeight: 600 }}>
+                <p style={{ margin: '0 0 1px', fontSize: '0.65rem', color: '#4A5568', fontWeight: 500 }}>
                   {companySettings?.address || 'OFFICE NO: 113/114, 1ST FLOOR, AL NOOR PLAZA, MADINAT QABOOS, MUSCAT, SULTANATE OF OMAN'}
                 </p>
-                <p style={{ margin: '0 0 2px', fontSize: '0.72rem', color: '#4A5568' }}>Email: {companyEmail}</p>
-                <p style={{ margin: '0 0 2px', fontSize: '0.72rem', color: '#4A5568' }}>Tel: {companyPhone}</p>
+                <p style={{ margin: '0 0 1px', fontSize: '0.65rem', color: '#4A5568' }}>Email: {companyEmail}</p>
+                <p style={{ margin: '0', fontSize: '0.65rem', color: '#4A5568' }}>Tel: {companyPhone}</p>
               </div>
-              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '0.25rem' }}>
+              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '0.2rem' }}>
                 {companySettings?.logo_url
-                  ? <img src={companySettings.logo_url} alt="Logo" style={{ width: 140, height: 'auto', display: 'block', objectFit: 'contain' }} />
-                  : <img src="/reference_logo.png" alt="Logo" style={{ width: 140, height: 'auto', display: 'block', objectFit: 'contain' }} />
+                  ? <img src={companySettings.logo_url} alt="Logo" style={{ width: 200, height: 'auto', display: 'block', objectFit: 'contain' }} />
+                  : <img src="/reference_logo.png" alt="Logo" style={{ width: 200, height: 'auto', display: 'block', objectFit: 'contain' }} />
                 }
-                <p style={{ margin: '4px 0 0', fontSize: '0.72rem', fontWeight: 700, color: '#1A202C' }}>
+                <p style={{ margin: '4px 0 0', fontSize: '0.65rem', fontWeight: 700, color: '#1A202C' }}>
                   CR NO: {companySettings?.vat_number || '1613378'}
                 </p>
                 {cur !== 'OMR' && (
-                  <p style={{ margin: '2px 0 0', fontSize: '0.7rem', color: '#718096', fontWeight: 600 }}>
+                  <p style={{ margin: '2px 0 0', fontSize: '0.6rem', color: '#718096', fontWeight: 600 }}>
                     Currency: {cur}
                   </p>
                 )}
@@ -490,7 +490,7 @@ export function PrintableVoucher({ voucher, journalLines, voucherLines = [], com
                     </tr>
                     <tr style={{ borderBottom: '1px solid #CBD5E0' }}>
                       <td style={{ padding: '3px 5px', fontWeight: 700, background: '#EDF2F7' }}>Account Name</td>
-                      <td style={{ padding: '3px 5px', fontWeight: 600 }}>TADBEER TRANSFORMATIONS</td>
+                      <td style={{ padding: '3px 5px', fontWeight: 600 }}>TADBEER TRANSFORMATIONS TRADING</td>
                     </tr>
                     <tr style={{ borderBottom: '1px solid #CBD5E0' }}>
                       <td style={{ padding: '3px 5px', fontWeight: 700, background: '#EDF2F7' }}>Bank Name</td>

@@ -348,35 +348,31 @@ export default function SalesVoucherPage() {
     if (!postedVoucher) return
     setDownloading(true)
     const vNumber = postedVoucher.voucher_number
-    
-    const loadHtml2Pdf = () => {
-      return new Promise((resolve) => {
-        if ((window as any).html2pdf) {
-          resolve((window as any).html2pdf)
-          return
-        }
-        const script = document.createElement('script')
-        script.src = 'https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js'
-        script.onload = () => resolve((window as any).html2pdf)
-        document.head.appendChild(script)
-      })
-    }
 
     try {
-      const html2pdf: any = await loadHtml2Pdf()
-      const element = document.getElementById('printable-voucher')
-      if (element) {
-        const opt = {
-          margin:       0.3,
-          filename:     `Invoice-${vNumber}.pdf`,
-          image:        { type: 'jpeg', quality: 0.98 },
-          html2canvas:  { scale: 2, useCORS: true },
-          jsPDF:        { unit: 'in', format: 'a4', orientation: 'portrait' }
+      // Use browser print dialog for proper multi-page A4 PDF
+      const el = document.getElementById('printable-voucher')
+      if (el) {
+        const win = window.open('', '_blank')
+        if (win) {
+          win.document.write(`
+            <html><head><title>Invoice ${vNumber}</title>
+            <style>
+              @page { size: A4 portrait; margin: 10mm; }
+              * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+              body { font-family: 'Inter', sans-serif; margin: 0; padding: 0; color: #1a1a1a; }
+              table { page-break-inside: auto; width: 100%; }
+              tr { page-break-inside: avoid; }
+              thead { display: table-header-group; }
+              img { max-width: 100%; height: auto; }
+            </style></head><body>${el.outerHTML}</body></html>
+          `)
+          win.document.close()
+          setTimeout(() => { win.print() }, 500)
         }
-        await html2pdf().set(opt).from(element).save()
       }
     } catch (pdfErr) {
-      console.error('Failed to generate PDF download:', pdfErr)
+      console.error('Failed to open print dialog:', pdfErr)
     } finally {
       setDownloading(false)
     }
@@ -387,36 +383,17 @@ export default function SalesVoucherPage() {
     const customerLedger = ledgers.find(l => l.name === postedVoucher.party_name)
     const emailTo = customerLedger?.email || ''
 
-    setSuccess('Generating PDF Invoice and loading Gmail client...')
+    setSuccess('Opening print dialog for PDF... Please save as PDF, then attach to Gmail.')
 
-    const loadHtml2Pdf = () => {
-      return new Promise((resolve) => {
-        if ((window as any).html2pdf) {
-          resolve((window as any).html2pdf)
-          return
-        }
-        const script = document.createElement('script')
-        script.src = 'https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js'
-        script.onload = () => resolve((window as any).html2pdf)
-        document.head.appendChild(script)
-      })
-    }
-
-    try {
-      const html2pdf: any = await loadHtml2Pdf()
-      const element = document.getElementById('printable-voucher')
-      if (element) {
-        const opt = {
-          margin:       0.3,
-          filename:     `Invoice-${postedVoucher.voucher_number}.pdf`,
-          image:        { type: 'jpeg', quality: 0.98 },
-          html2canvas:  { scale: 2, useCORS: true },
-          jsPDF:        { unit: 'in', format: 'a4', orientation: 'portrait' }
-        }
-        await html2pdf().set(opt).from(element).save()
+    // Use browser print dialog for proper multi-page A4 PDF
+    const el = document.getElementById('printable-voucher')
+    if (el) {
+      const win = window.open('', '_blank')
+      if (win) {
+        win.document.write(`<html><head><title>Invoice ${postedVoucher.voucher_number}</title><style>@page{size:A4 portrait;margin:10mm}*{-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important}body{font-family:'Inter',sans-serif;margin:0;padding:0;color:#1a1a1a}table{page-break-inside:auto;width:100%}tr{page-break-inside:avoid}thead{display:table-header-group}img{max-width:100%;height:auto}</style></head><body>${el.outerHTML}</body></html>`)
+        win.document.close()
+        setTimeout(() => { win.print() }, 500)
       }
-    } catch (pdfErr) {
-      console.error('Failed to generate PDF download:', pdfErr)
     }
     
     const emailBody = `Dear ${postedVoucher.party_name || 'Customer'},\n\n` +
@@ -505,7 +482,7 @@ export default function SalesVoucherPage() {
           </div>
         </div>
 
-        <div className="card" style={{ padding: '2.5rem', boxShadow: 'var(--shadow-lg)' }}>
+        <div className="card" style={{ padding: 0, boxShadow: 'var(--shadow-lg)' }}>
           {loadingJournal ? (
             <div style={{ textAlign: 'center', padding: '3rem' }}>Loading invoice preview...</div>
           ) : (

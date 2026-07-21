@@ -297,41 +297,27 @@ export default function PaymentVoucherPage() {
     finally { setSaving(false) }
   }
 
-  async function handleDownload() {
+  function handleDownload() {
     if (!postedVoucher) return
-    setDownloading(true)
-    const vNumber = postedVoucher.voucher_number
-    
-    const loadHtml2Pdf = () => {
-      return new Promise((resolve) => {
-        if ((window as any).html2pdf) {
-          resolve((window as any).html2pdf)
-          return
-        }
-        const script = document.createElement('script')
-        script.src = 'https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js'
-        script.onload = () => resolve((window as any).html2pdf)
-        document.head.appendChild(script)
-      })
-    }
-
-    try {
-      const html2pdf: any = await loadHtml2Pdf()
-      const element = document.getElementById('printable-voucher')
-      if (element) {
-        const opt = {
-          margin:       0.3,
-          filename:     `Payment-${vNumber}.pdf`,
-          image:        { type: 'jpeg', quality: 0.98 },
-          html2canvas:  { scale: 2, useCORS: true },
-          jsPDF:        { unit: 'in', format: 'a4', orientation: 'portrait' }
-        }
-        await html2pdf().set(opt).from(element).save()
+    const el = document.getElementById('printable-voucher')
+    if (el) {
+      const win = window.open('', '_blank')
+      if (win) {
+        win.document.write(
+          '<html><head><title>Print</title>' +
+          '<style>' +
+          '@page { size: A4 portrait; margin: 10mm; }' +
+          '* { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }' +
+          'body { font-family: Inter, sans-serif; margin: 0; padding: 0; color: #1a1a1a; }' +
+          'table { page-break-inside: auto; width: 100%; }' +
+          'tr { page-break-inside: avoid; }' +
+          'thead { display: table-header-group; }' +
+          'img { max-width: 100%; height: auto; }' +
+          '</style></head><body>' + el.outerHTML + '</body></html>'
+        )
+        win.document.close()
+        setTimeout(() => { win.print() }, 500)
       }
-    } catch (pdfErr) {
-      console.error('Failed to generate PDF download:', pdfErr)
-    } finally {
-      setDownloading(false)
     }
   }
 
@@ -375,7 +361,7 @@ export default function PaymentVoucherPage() {
             </div>
           </div>
         </div>
-        <div className="card" style={{ padding: '2.5rem' }}>
+        <div className="card" style={{ padding: 0 }}>
           {loadingJournal ? <div style={{ textAlign: 'center', padding: '3rem' }}>Loading...</div> :
             <PrintableVoucher voucher={postedVoucher} journalLines={postedJournalLines} companySettings={companySettings} currency={postedVoucher.currency || 'OMR'} />}
         </div>
