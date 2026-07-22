@@ -1054,4 +1054,9 @@ tbody tr:hover { background: var(--color-surface-alt); }
       color: #8F9994;
     }
   }
+
+  .only-print { display: inline-block !important; }
+  .no-print { display: none !important; }
 }
+
+.only-print { display: none !important; }

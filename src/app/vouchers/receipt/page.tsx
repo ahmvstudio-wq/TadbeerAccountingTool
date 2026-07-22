@@ -32,6 +32,7 @@ export default function ReceiptVoucherPage() {
 
   const [postedVoucher, setPostedVoucher] = useState<Voucher | null>(null)
   const [postedJournalLines, setPostedJournalLines] = useState<JournalLine[]>([])
+  const [postedSettlements, setPostedSettlements] = useState<any[]>([])
   const [loadingJournal, setLoadingJournal] = useState(false)
   const [downloading, setDownloading] = useState(false)
 
@@ -231,10 +232,12 @@ export default function ReceiptVoucherPage() {
       setSuccess(`Receipt Voucher ${voucher.voucher_number} posted successfully!`)
 
       setLoadingJournal(true)
-      const { data: jLines } = await (supabase as any)
-        .from('journal_lines').select('*, ledger:ledgers(name, account_code, classification)')
-        .eq('voucher_id', voucher.id).order('type', { ascending: true })
+      const [{ data: jLines }, { data: setts }] = await Promise.all([
+        (supabase as any).from('journal_lines').select('*, ledger:ledgers(name, account_code, classification)').eq('voucher_id', voucher.id).order('type', { ascending: true }),
+        (supabase as any).from('settlements').select('*').eq('source_voucher_id', voucher.id)
+      ])
       setPostedJournalLines(jLines ?? [])
+      setPostedSettlements(setts ?? [])
       setLoadingJournal(false)
 
       setRef(''); setNarration(''); setNotes('')
@@ -253,7 +256,7 @@ export default function ReceiptVoucherPage() {
         win.document.write(
           '<html><head><title>Print</title>' +
           '<style>' +
-          '@page { size: A4 portrait; margin: 10mm; }' +
+          '@page { size: A4 portrait; margin: 5mm; }' +
           '* { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }' +
           'body { font-family: Inter, sans-serif; margin: 0; padding: 0; color: #1a1a1a; }' +
           'table { page-break-inside: auto; width: 100%; }' +
@@ -276,7 +279,7 @@ export default function ReceiptVoucherPage() {
     win.document.write(`
       <html><head><title>Print</title>
       <style>
-        @page { size: A4 portrait; margin: 15mm; }
+        @page { size: A4 portrait; margin: 5mm; }
         body { font-family: 'Inter', sans-serif; margin: 0; padding: 0; color: #1a1a1a; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
         @media print {
           body { margin: 0; padding: 0; }
@@ -288,7 +291,7 @@ export default function ReceiptVoucherPage() {
     win.print()
   }
 
-  function startNew() { setPostedVoucher(null); setPostedJournalLines([]); setSuccess(null) }
+  function startNew() { setPostedVoucher(null); setPostedJournalLines([]); setPostedSettlements([]); setSuccess(null) }
 
   if (loading) return <div style={{ padding: '2rem' }}><div className="skeleton" style={{ height: 300, borderRadius: 12 }} /></div>
 
@@ -313,7 +316,7 @@ export default function ReceiptVoucherPage() {
         </div>
         <div className="card" style={{ padding: 0 }}>
           {loadingJournal ? <div style={{ textAlign: 'center', padding: '3rem' }}>Loading...</div> :
-            <PrintableVoucher voucher={postedVoucher} journalLines={postedJournalLines} companySettings={companySettings} currency={postedVoucher.currency || 'OMR'} />}
+            <PrintableVoucher voucher={postedVoucher} journalLines={postedJournalLines} settlements={postedSettlements} companySettings={companySettings} currency={postedVoucher.currency || 'OMR'} />}
         </div>
       </div>
     )

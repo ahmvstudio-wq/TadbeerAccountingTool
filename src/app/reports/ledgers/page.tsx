@@ -50,6 +50,7 @@ function LedgerReportContent() {
   const [totalDebit, setTotalDebit] = useState(0)
   const [totalCredit, setTotalCredit] = useState(0)
   const [closingBalance, setClosingBalance] = useState({ amount: 0, type: 'Dr' })
+  const [settlementsMap, setSettlementsMap] = useState<Record<string, { as_source: any[]; as_target: any[] }>>({})
 
   // Voucher Preview Modal State
   const [selectedVoucher, setSelectedVoucher] = useState<Voucher | null>(null)
@@ -231,6 +232,32 @@ function LedgerReportContent() {
       const closeBalAmt = Math.abs(currentSigned)
       const closeBalType = currentSigned >= 0 ? 'Dr' : 'Cr'
       setClosingBalance({ amount: closeBalAmt, type: closeBalType })
+
+      // Fetch settlement references for all in-range vouchers
+      const voucherIds = Array.from(new Set(processedLines.filter(l => l.voucher_id).map(l => l.voucher_id!)))
+      if (voucherIds.length > 0) {
+        const { data: setts } = await supabase
+          .from('settlements')
+          .select('*')
+          .or(`source_voucher_id.in.(${voucherIds.join(',')}),target_voucher_id.in.(${voucherIds.join(',')})`)
+
+        const map: Record<string, { as_source: any[]; as_target: any[] }> = {}
+        if (setts) {
+          for (const s of setts) {
+            if (s.source_voucher_id) {
+              if (!map[s.source_voucher_id]) map[s.source_voucher_id] = { as_source: [], as_target: [] }
+              map[s.source_voucher_id].as_source.push(s)
+            }
+            if (s.target_voucher_id) {
+              if (!map[s.target_voucher_id]) map[s.target_voucher_id] = { as_source: [], as_target: [] }
+              map[s.target_voucher_id].as_target.push(s)
+            }
+          }
+        }
+        setSettlementsMap(map)
+      } else {
+        setSettlementsMap({})
+      }
 
     } catch (err: any) {
       console.error(err)
@@ -577,7 +604,6 @@ function LedgerReportContent() {
                           <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
                             <button
                               onClick={() => viewVoucherDetails(line.voucher!)}
-                              className="no-print"
                               style={{
                                 border: 'none',
                                 background: 'none',
@@ -592,9 +618,6 @@ function LedgerReportContent() {
                             >
                               {line.voucher.voucher_number}
                             </button>
-                            <span className="only-print" style={{ fontFamily: 'monospace', fontWeight: 700 }}>
-                              {line.voucher.voucher_number}
-                            </span>
                             {line.voucher.ref && (
                               <span style={{ fontSize: '0.75rem', color: '#718096' }}>Ref: {line.voucher.ref}</span>
                             )}
@@ -612,6 +635,30 @@ function LedgerReportContent() {
                         <div>{line.narration || line.voucher?.narration || 'Journal entry posting'}</div>
                         {line.voucher?.party_name && (
                           <div style={{ fontSize: '0.75rem', color: '#718096', marginTop: 2 }}>Party: {line.voucher.party_name}</div>
+                        )}
+                        {/* Display Settlement Reference (Against Invoice / Settled By) */}
+                        {line.voucher_id && settlementsMap[line.voucher_id] && (
+                          <div style={{ marginTop: 4, fontSize: '0.72rem' }}>
+                            {settlementsMap[line.voucher_id].as_source?.length > 0 && (
+                              <div style={{ color: '#1d4ed8', fontWeight: 600 }}>
+                                {line.voucher?.type === 'RECEIPT' ? 'Received against: ' : line.voucher?.type === 'PAYMENT' ? 'Paid against: ' : 'Allocated to: '}
+                                {settlementsMap[line.voucher_id].as_source.map((s, idx) => (
+                                  <span key={idx} style={{ fontFamily: 'monospace', marginRight: 6 }}>
+                                    {s.is_on_account ? `[On Account: ${Number(s.allocated_amount).toFixed(3)}]` : `[${s.target_voucher_number || s.target_voucher_id}: ${Number(s.allocated_amount).toFixed(3)}]`}
+                                  </span>
+                                ))}
+                              </div>
+                            )}
+                            {settlementsMap[line.voucher_id].as_target?.length > 0 && (
+                              <div style={{ color: '#15803d', fontWeight: 600 }}>
+                                Settled by: {settlementsMap[line.voucher_id].as_target.map((s, idx) => (
+                                  <span key={idx} style={{ fontFamily: 'monospace', marginRight: 6 }}>
+                                    [{s.source_voucher_number || s.source_voucher_id}: {Number(s.allocated_amount).toFixed(3)}]
+                                  </span>
+                                ))}
+                              </div>
+                            )}
+                          </div>
                         )}
                       </td>
                       <td style={{ padding: '10px 12px', textAlign: 'right', fontWeight: line.type === 'Dr' ? 600 : 400, color: line.type === 'Dr' ? '#22c55e' : 'inherit' }}>

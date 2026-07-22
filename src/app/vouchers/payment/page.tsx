@@ -32,6 +32,7 @@ export default function PaymentVoucherPage() {
 
   const [postedVoucher, setPostedVoucher] = useState<Voucher | null>(null)
   const [postedJournalLines, setPostedJournalLines] = useState<JournalLine[]>([])
+  const [postedSettlements, setPostedSettlements] = useState<any[]>([])
   const [loadingJournal, setLoadingJournal] = useState(false)
   const [downloading, setDownloading] = useState(false)
 
@@ -283,10 +284,12 @@ export default function PaymentVoucherPage() {
       setSuccess(`Payment Voucher ${voucher.voucher_number} posted!`)
 
       setLoadingJournal(true)
-      const { data: jLines } = await (supabase as any)
-        .from('journal_lines').select('*, ledger:ledgers(name, account_code, classification)')
-        .eq('voucher_id', voucher.id).order('type', { ascending: true })
+      const [{ data: jLines }, { data: setts }] = await Promise.all([
+        (supabase as any).from('journal_lines').select('*, ledger:ledgers(name, account_code, classification)').eq('voucher_id', voucher.id).order('type', { ascending: true }),
+        (supabase as any).from('settlements').select('*').eq('source_voucher_id', voucher.id)
+      ])
       setPostedJournalLines(jLines ?? [])
+      setPostedSettlements(setts ?? [])
       setLoadingJournal(false)
 
       setRef(''); setNarration(''); setNotes('')
@@ -341,7 +344,7 @@ export default function PaymentVoucherPage() {
     win.print()
   }
 
-  function startNew() { setPostedVoucher(null); setPostedJournalLines([]); setSuccess(null) }
+  function startNew() { setPostedVoucher(null); setPostedJournalLines([]); setPostedSettlements([]); setSuccess(null) }
 
   if (loading) return <div style={{ padding: '2rem' }}><div className="skeleton" style={{ height: 300, borderRadius: 12 }} /></div>
 
@@ -352,7 +355,10 @@ export default function PaymentVoucherPage() {
           <div className="card-body" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '1rem' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
               <div style={{ width: 40, height: 40, background: 'rgba(34,197,94,0.1)', color: '#22c55e', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><CheckCircle size={22} /></div>
-              <div><h3 style={{ fontSize: '1rem', fontWeight: 700, color: 'var(--color-success)', margin: 0 }}>Payment Posted</h3><p style={{ fontSize: '0.8rem', color: 'var(--color-text-secondary)', margin: 0 }}>{postedVoucher.voucher_number}</p></div>
+              <div>
+                <h3 style={{ fontSize: '1rem', fontWeight: 700, color: 'var(--color-success)', margin: 0 }}>Payment Posted</h3>
+                <p style={{ fontSize: '0.8rem', color: 'var(--color-text-secondary)', margin: 0 }}>{postedVoucher.voucher_number}</p>
+              </div>
             </div>
             <div style={{ display: 'flex', gap: '0.5rem' }}>
               <button className="btn btn-teal" onClick={handleDownload} disabled={downloading}><Download size={16} /> Download</button>
@@ -363,7 +369,7 @@ export default function PaymentVoucherPage() {
         </div>
         <div className="card" style={{ padding: 0 }}>
           {loadingJournal ? <div style={{ textAlign: 'center', padding: '3rem' }}>Loading...</div> :
-            <PrintableVoucher voucher={postedVoucher} journalLines={postedJournalLines} companySettings={companySettings} currency={postedVoucher.currency || 'OMR'} />}
+            <PrintableVoucher voucher={postedVoucher} journalLines={postedJournalLines} settlements={postedSettlements} companySettings={companySettings} currency={postedVoucher.currency || 'OMR'} />}
         </div>
       </div>
     )

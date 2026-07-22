@@ -30,6 +30,7 @@ interface PrintableVoucherProps {
     vat_amount: number
     ledger?: { name: string; account_code: string }
   }[]
+  settlements?: { as_source?: any[]; as_target?: any[] } | any[]
   companySettings?: {
     company_name: string
     address?: string | null
@@ -166,19 +167,19 @@ function getPartyDetailsTitle(type: string): string {
 // --- Shared Signature & Stamp Footer ---
 function SignatureFooter({ type }: { type: string }) {
   return (
-    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', marginTop: '0.5rem', pageBreakInside: 'avoid', breakInside: 'avoid' }}>
-      <div style={{ width: '130px', textAlign: 'center' }}>
-        <img src="/reference_signature.png" alt="Signature" style={{ width: 200, height: 'auto', display: 'block', margin: '0 auto' }} />
+    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', marginTop: '0.25rem', marginBottom: '0.25rem', pageBreakInside: 'avoid', breakInside: 'avoid' }}>
+      <div style={{ textAlign: 'center' }}>
+        <img src="/reference_signature.png" alt="Signature" style={{ width: 135, height: 'auto', display: 'block' }} />
       </div>
-      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', marginRight: '2rem' }}>
-        <img src="/reference_stamp.png" alt="Company Stamp" style={{ width: 160, height: 'auto', display: 'block' }} />
-        <span style={{ fontSize: '0.65rem', fontWeight: 700, color: '#718096', marginTop: '2px' }}>Company Stamp</span>
+      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', marginRight: '1rem' }}>
+        <img src="/reference_stamp.png" alt="Company Stamp" style={{ width: 125, height: 'auto', display: 'block' }} />
+        <span style={{ fontSize: '0.62rem', fontWeight: 700, color: '#718096', marginTop: '2px' }}>Company Stamp</span>
       </div>
     </div>
   )
 }
 
-export function PrintableVoucher({ voucher, journalLines, voucherLines = [], companySettings, partyLedger, currency = 'OMR' }: PrintableVoucherProps) {
+export function PrintableVoucher({ voucher, journalLines, voucherLines = [], settlements, companySettings, partyLedger, currency = 'OMR' }: PrintableVoucherProps) {
   const cur = currency || voucher.currency || 'OMR'
   const grandTotal = Number(voucher.grand_total || voucher.amount || 0)
   const isSale = voucher.type === 'SALE'
@@ -192,9 +193,21 @@ export function PrintableVoucher({ voucher, journalLines, voucherLines = [], com
   const companyName = 'TADBEER TRANSFORMATIONS TRADING'
 
   // Standardize lines computation across ALL voucher types
-  // Standardize lines computation across ALL voucher types
   let linesToRender: any[] = []
-  if (voucherLines && voucherLines.length > 0) {
+  
+  if (voucher.type === 'RECEIPT') {
+    // For RECEIPT vouchers specifically, Particulars shows ONLY the Mode of Payment
+    const drLine = journalLines.find(jl => jl.type === 'Dr')
+    const bankOrCashName = drLine?.ledger?.name || 'Bank / Cash Account'
+    const refText = voucher.ref ? ` (${voucher.ref})` : ''
+    linesToRender = [{
+      description: `${bankOrCashName}${refText}`,
+      quantity: 1,
+      rate: grandTotal,
+      amount: grandTotal,
+      vat_amount: 0,
+    }]
+  } else if (voucherLines && voucherLines.length > 0) {
     // If we have voucher lines in DB, use them directly but filter out any VAT ledger lines
     linesToRender = voucherLines.filter(vl => {
       const name = vl.ledger?.name?.toLowerCase() || '';
@@ -251,22 +264,25 @@ export function PrintableVoucher({ voucher, journalLines, voucherLines = [], com
       {/* Repeating Header */}
       <thead style={{ display: 'table-header-group' }}>
         <tr>
-          <td style={{ padding: '0.5rem 1rem 0 1rem', border: 'none' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '2rem', marginBottom: '1rem' }}>
+          <td style={{ padding: '0.4rem 0.5rem 0 0.5rem', border: 'none' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '2rem', marginBottom: '0.5rem' }}>
               <div style={{ flex: 1 }}>
-                <h2 style={{ fontSize: '1rem', fontWeight: 800, color: primaryColor, margin: '0 0 3px', letterSpacing: '-0.02em', textTransform: 'uppercase' }}>
+                <h2 style={{ fontSize: '1.05rem', fontWeight: 800, color: primaryColor, margin: '0 0 2px', letterSpacing: '-0.02em', textTransform: 'uppercase' }}>
                   {companyName}
                 </h2>
                 <p style={{ margin: '0 0 1px', fontSize: '0.65rem', color: '#4A5568', fontWeight: 500 }}>
-                  {companySettings?.address || 'OFFICE NO: 113/114, 1ST FLOOR, AL NOOR PLAZA, MADINAT QABOOS, MUSCAT, SULTANATE OF OMAN'}
+                  OFFICE NO: 113/114, 1ST FLOOR, AL NOOR PLAZA, MADINAT QABOOS,
+                </p>
+                <p style={{ margin: '0 0 2px', fontSize: '0.65rem', color: '#4A5568', fontWeight: 500 }}>
+                  MUSCAT, SULTANATE OF OMAN
                 </p>
                 <p style={{ margin: '0 0 1px', fontSize: '0.65rem', color: '#4A5568' }}>Email: {companyEmail}</p>
                 <p style={{ margin: '0', fontSize: '0.65rem', color: '#4A5568' }}>Tel: {companyPhone}</p>
               </div>
               <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '0.2rem' }}>
                 {companySettings?.logo_url
-                  ? <img src={companySettings.logo_url} alt="Logo" style={{ width: 200, height: 'auto', display: 'block', objectFit: 'contain' }} />
-                  : <img src="/reference_logo.png" alt="Logo" style={{ width: 200, height: 'auto', display: 'block', objectFit: 'contain' }} />
+                  ? <img src={companySettings.logo_url} alt="Logo" style={{ width: 245, height: 'auto', display: 'block', objectFit: 'contain' }} />
+                  : <img src="/reference_logo.png" alt="Logo" style={{ width: 245, height: 'auto', display: 'block', objectFit: 'contain' }} />
                 }
                 <p style={{ margin: '4px 0 0', fontSize: '0.65rem', fontWeight: 700, color: '#1A202C' }}>
                   CR NO: {companySettings?.vat_number || '1613378'}
@@ -280,7 +296,7 @@ export function PrintableVoucher({ voucher, journalLines, voucherLines = [], com
             </div>
 
             {/* Title Bar */}
-            <div style={{ textAlign: 'center', borderTop: `2px solid ${accentColor}`, borderBottom: `2px solid ${accentColor}`, padding: '3px 0', marginBottom: '1rem' }}>
+            <div style={{ textAlign: 'center', borderTop: `2px solid ${accentColor}`, borderBottom: `2px solid ${accentColor}`, padding: '3px 0', marginBottom: '0.5rem' }}>
               <h1 style={{ fontSize: '1.15rem', fontWeight: 800, color: '#0284c7', margin: 0, letterSpacing: '0.1em', textTransform: 'uppercase' }}>
                 {getVoucherTitle(voucher.type)}
               </h1>
@@ -293,7 +309,7 @@ export function PrintableVoucher({ voucher, journalLines, voucherLines = [], com
       <tbody>
         {/* Row 1: Details (Customer/Supplier details & Voucher details) */}
         <tr style={{ pageBreakInside: 'avoid', breakInside: 'avoid' }}>
-          <td style={{ padding: '0 1rem', border: 'none' }}>
+          <td style={{ padding: '0 0.5rem', border: 'none' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', gap: '1.5rem', marginBottom: '1rem' }}>
               {showPartyBox ? (
                 <div style={{ flex: 1.2, border: '1px solid #E2E8F0', borderRadius: '4px' }}>
@@ -363,11 +379,9 @@ export function PrintableVoucher({ voucher, journalLines, voucherLines = [], com
               </div>
             </div>
           </td>
-        </tr>
-
-        {/* Row 2: Particulars Table */}
+        </tr>        {/* Row 2: Particulars Table */}
         <tr style={{ pageBreakInside: 'auto', breakInside: 'auto' }}>
-          <td style={{ padding: '0 1rem', border: 'none' }}>
+          <td style={{ padding: '0 0.5rem', border: 'none' }}>
             <table style={{ width: '100%', borderCollapse: 'collapse', marginBottom: '0.75rem', fontSize: '0.8rem' }}>
               <thead>
                 <tr style={{ background: '#EDF2F7', borderTop: '1px solid #CBD5E0', borderBottom: '2px solid #CBD5E0' }}>
@@ -421,7 +435,7 @@ export function PrintableVoucher({ voucher, journalLines, voucherLines = [], com
 
         {/* Row 3: Notes & Summary Grid */}
         <tr style={{ pageBreakInside: 'avoid', breakInside: 'avoid' }}>
-          <td style={{ padding: '0 1rem', border: 'none' }}>
+          <td style={{ padding: '0 0.5rem', border: 'none' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', gap: '1.5rem', alignItems: 'flex-start', marginBottom: '0.75rem' }}>
               <div style={{ flex: 1.1 }}>
                 <div style={{ fontSize: '0.75rem', fontWeight: 700, textDecoration: 'underline', marginBottom: '3px' }}>Additional Notes:</div>
@@ -431,6 +445,29 @@ export function PrintableVoucher({ voucher, journalLines, voucherLines = [], com
                     <strong>Notes:</strong> {voucher.notes}
                   </p>
                 )}
+                {/* Settlement Reference Info */}
+                {(() => {
+                  const sources = Array.isArray(settlements)
+                    ? settlements
+                    : (settlements?.as_source || (voucher as any).settlements || (voucher as any).allocations || [])
+                  if (!sources || sources.length === 0) return null
+                  return (
+                    <div style={{ marginTop: '8px', fontSize: '0.72rem', color: '#1E3A8A', background: '#F0F9FF', padding: '6px 8px', borderRadius: '4px', border: '1px solid #BAE6FD' }}>
+                      <div style={{ fontWeight: 700, fontSize: '0.7rem', textTransform: 'uppercase', marginBottom: '3px' }}>
+                        {voucher.type === 'RECEIPT' ? 'Received Against Invoice(s):' : voucher.type === 'PAYMENT' ? 'Paid Against Invoice(s):' : 'Settlement Reference(s):'}
+                      </div>
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+                        {sources.map((s: any, idx: number) => (
+                          <span key={idx} style={{ fontWeight: 600, background: '#FFFFFF', padding: '2px 6px', borderRadius: '3px', border: '1px solid #CBD5E0', fontFamily: 'monospace' }}>
+                            {s.is_on_account
+                              ? `On Account: ${fmtNum(s.allocated_amount || s.amount, cur)}`
+                              : `${s.target_voucher_number || s.target_voucher_id} (${fmtNum(s.allocated_amount || s.amount, cur)})`}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  )
+                })()}
               </div>
               <div style={{ flex: 0.9 }}>
                 <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.75rem' }}>
@@ -466,7 +503,7 @@ export function PrintableVoucher({ voucher, journalLines, voucherLines = [], com
 
         {/* Row 4: Amounts in Words */}
         <tr style={{ pageBreakInside: 'avoid', breakInside: 'avoid' }}>
-          <td style={{ padding: '0 1rem', border: 'none' }}>
+          <td style={{ padding: '0 0.5rem', border: 'none' }}>
             <div style={{ borderTop: '1px solid #CBD5E0', paddingTop: '6px', marginBottom: '0.75rem' }}>
               <span style={{ fontWeight: 700, fontSize: '0.75rem', textDecoration: 'underline' }}>Amounts in Words</span>
               <div style={{ marginTop: '2px', fontStyle: 'italic', fontWeight: 600, fontSize: '0.75rem' }}>
@@ -479,26 +516,26 @@ export function PrintableVoucher({ voucher, journalLines, voucherLines = [], com
         {/* Row 5: Payment Instructions */}
         {isSale && (
           <tr style={{ pageBreakInside: 'avoid', breakInside: 'avoid' }}>
-            <td style={{ padding: '0 1rem', border: 'none' }}>
-              <div style={{ marginBottom: '0.75rem', maxWidth: '380px' }}>
+            <td style={{ padding: '0 0.5rem', border: 'none' }}>
+              <div style={{ marginBottom: '0.5rem', maxWidth: '480px' }}>
                 <div style={{ fontWeight: 700, fontSize: '0.75rem', textDecoration: 'underline', marginBottom: '4px' }}>Payment Instructions</div>
                 <table style={{ width: '100%', borderCollapse: 'collapse', border: '1px solid #CBD5E0', fontSize: '0.72rem' }}>
                   <tbody>
                     <tr style={{ borderBottom: '1px solid #CBD5E0' }}>
-                      <td style={{ padding: '3px 5px', fontWeight: 700, background: '#EDF2F7', width: '35%' }}>Account No</td>
-                      <td style={{ padding: '3px 5px', fontWeight: 600 }}>0332-07960213-0017</td>
+                      <td style={{ padding: '3px 6px', fontWeight: 700, background: '#EDF2F7', width: '28%', whiteSpace: 'nowrap' }}>Account No</td>
+                      <td style={{ padding: '3px 6px', fontWeight: 600 }}>0332-07960213-0017</td>
                     </tr>
                     <tr style={{ borderBottom: '1px solid #CBD5E0' }}>
-                      <td style={{ padding: '3px 5px', fontWeight: 700, background: '#EDF2F7' }}>Account Name</td>
-                      <td style={{ padding: '3px 5px', fontWeight: 600 }}>TADBEER TRANSFORMATIONS TRADING</td>
+                      <td style={{ padding: '3px 6px', fontWeight: 700, background: '#EDF2F7', whiteSpace: 'nowrap' }}>Account Name</td>
+                      <td style={{ padding: '3px 6px', fontWeight: 600, whiteSpace: 'nowrap' }}>TADBEER TRANSFORMATIONS TRADING</td>
                     </tr>
                     <tr style={{ borderBottom: '1px solid #CBD5E0' }}>
-                      <td style={{ padding: '3px 5px', fontWeight: 700, background: '#EDF2F7' }}>Bank Name</td>
-                      <td style={{ padding: '3px 5px', fontWeight: 600 }}>Bank Muscat</td>
+                      <td style={{ padding: '3px 6px', fontWeight: 700, background: '#EDF2F7', whiteSpace: 'nowrap' }}>Bank Name</td>
+                      <td style={{ padding: '3px 6px', fontWeight: 600 }}>Bank Muscat</td>
                     </tr>
                     <tr>
-                      <td style={{ padding: '3px 5px', fontWeight: 700, background: '#EDF2F7' }}>Branch</td>
-                      <td style={{ padding: '3px 5px', fontWeight: 600 }}>Main Branch</td>
+                      <td style={{ padding: '3px 6px', fontWeight: 700, background: '#EDF2F7', whiteSpace: 'nowrap' }}>Branch</td>
+                      <td style={{ padding: '3px 6px', fontWeight: 600 }}>Main Branch</td>
                     </tr>
                   </tbody>
                 </table>
@@ -508,9 +545,9 @@ export function PrintableVoucher({ voucher, journalLines, voucherLines = [], com
         )}
         {/* Row 6: Signature Section (Appears only once at the end) */}
         <tr style={{ pageBreakInside: 'avoid', breakInside: 'avoid' }}>
-          <td style={{ padding: '0 1rem 0.5rem 1rem', border: 'none' }}>
+          <td style={{ padding: '0 0.5rem 0.4rem 0.5rem', border: 'none' }}>
             <SignatureFooter type={voucher.type} />
-            <div style={{ textAlign: 'center', fontSize: '0.65rem', color: '#718096', borderTop: '1px dashed #E2E8F0', paddingTop: '4px', marginTop: '0.75rem' }}>
+            <div style={{ textAlign: 'center', fontSize: '0.62rem', color: '#718096', borderTop: '1px dashed #E2E8F0', paddingTop: '4px', marginTop: '0.4rem' }}>
               *This is a computer generated document*
             </div>
           </td>
