@@ -447,9 +447,10 @@ export function PrintableVoucher({ voucher, journalLines, voucherLines = [], set
                 )}
                 {/* Settlement Reference Info */}
                 {(() => {
-                  const sources = Array.isArray(settlements)
+                  const rawSources = Array.isArray(settlements)
                     ? settlements
                     : (settlements?.as_source || (voucher as any).settlements || (voucher as any).allocations || [])
+                  const sources = (rawSources || []).filter((s: any) => !s.is_on_account && (s.target_voucher_number || s.target_voucher_id))
                   if (!sources || sources.length === 0) return null
                   return (
                     <div style={{ marginTop: '8px', fontSize: '0.72rem', color: '#1E3A8A', background: '#F0F9FF', padding: '6px 8px', borderRadius: '4px', border: '1px solid #BAE6FD' }}>
@@ -459,9 +460,7 @@ export function PrintableVoucher({ voucher, journalLines, voucherLines = [], set
                       <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
                         {sources.map((s: any, idx: number) => (
                           <span key={idx} style={{ fontWeight: 600, background: '#FFFFFF', padding: '2px 6px', borderRadius: '3px', border: '1px solid #CBD5E0', fontFamily: 'monospace' }}>
-                            {s.is_on_account
-                              ? `On Account: ${fmtNum(s.allocated_amount || s.amount, cur)}`
-                              : `${s.target_voucher_number || s.target_voucher_id} (${fmtNum(s.allocated_amount || s.amount, cur)})`}
+                            {`${s.target_voucher_number || s.target_voucher_id} (${fmtNum(s.allocated_amount || s.amount, cur)})`}
                           </span>
                         ))}
                       </div>

@@ -314,7 +314,7 @@ export default function ReceiptVoucherPage() {
             </div>
           </div>
         </div>
-        <div className="card" style={{ padding: 0 }}>
+        <div style={{ borderRadius: '8px', overflow: 'hidden', boxShadow: 'var(--shadow-sm)' }}>
           {loadingJournal ? <div style={{ textAlign: 'center', padding: '3rem' }}>Loading...</div> :
             <PrintableVoucher voucher={postedVoucher} journalLines={postedJournalLines} settlements={postedSettlements} companySettings={companySettings} currency={postedVoucher.currency || 'OMR'} />}
         </div>
