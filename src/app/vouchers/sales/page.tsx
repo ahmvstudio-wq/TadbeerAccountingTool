@@ -119,11 +119,25 @@ export default function SalesVoucherPage() {
     return gn.includes('debtor') || gn.includes('customer')
   })
   const incomeAccounts = ledgers.filter(l => (l.group as any)?.nature === 'INCOME')
+  const defaultIncomeLedgerId = incomeAccounts[0]?.id || ledgers[0]?.id || ''
   const vatOutputLedger = ledgers.find(l => l.name.toLowerCase().includes('vat') && (l.name.toLowerCase().includes('output') || l.name.toLowerCase().includes('payable')))
 
   const subtotal = lines.reduce((s, l) => s + Number(l.amount || 0), 0)
   const vatTotal = lines.reduce((s, l) => s + Number(l.vat_amount || 0), 0)
   const grandTotal = subtotal + vatTotal
+
+  // Auto-resolve any empty ledger_id when ledgers load
+  useEffect(() => {
+    if (defaultIncomeLedgerId) {
+      setLines(prev => prev.map(l => {
+        if (!l.ledger_id) {
+          const item = items.find(i => i.id === l.item_id)
+          return { ...l, ledger_id: item?.income_ledger_id || defaultIncomeLedgerId }
+        }
+        return l
+      }))
+    }
+  }, [defaultIncomeLedgerId, items])
 
   function updateLine(idx: number, field: keyof LineItem, value: any) {
     setLines(prev => {
@@ -139,7 +153,7 @@ export default function SalesVoucherPage() {
           next[idx].quantity = 1
           next[idx].amount = Number(item.sell_price || 0)
           next[idx].vat_rate = Number(item.tax_rate || 5.00)
-          next[idx].ledger_id = item.income_ledger_id || ''
+          next[idx].ledger_id = item.income_ledger_id || defaultIncomeLedgerId
         }
       }
 
@@ -164,7 +178,7 @@ export default function SalesVoucherPage() {
     const defaultItem = items[0]
     setLines(prev => [...prev, { 
       item_id: defaultItem?.id || '', 
-      ledger_id: defaultItem?.income_ledger_id || '', 
+      ledger_id: defaultItem?.income_ledger_id || defaultIncomeLedgerId, 
       description: defaultItem?.name || '', 
       quantity: 1, 
       rate: Number(defaultItem?.sell_price || 0), 
@@ -227,13 +241,18 @@ export default function SalesVoucherPage() {
     if (!customerId) { setError('Select a customer.'); return }
     if (!narration.trim()) { setError('Narration is required.'); return }
     
-    // Check each line for missing ledger (income account)
-    for (let i = 0; i < lines.length; i++) {
-      if (!lines[i].ledger_id) {
+    // Check and auto-resolve each line for missing ledger (income account)
+    const resolvedLines = lines.map(l => ({
+      ...l,
+      ledger_id: l.ledger_id || defaultIncomeLedgerId
+    }))
+
+    for (let i = 0; i < resolvedLines.length; i++) {
+      if (!resolvedLines[i].ledger_id) {
         setError(`Line ${i + 1}: No income account selected. Please pick a Particulars account or create one with the + button.`)
         return
       }
-      if (!lines[i].amount || lines[i].amount <= 0) {
+      if (!resolvedLines[i].amount || resolvedLines[i].amount <= 0) {
         setError(`Line ${i + 1}: Amount must be greater than zero.`)
         return
       }
@@ -260,8 +279,8 @@ export default function SalesVoucherPage() {
           company_id: companyId,
           vat_ledger_id: vatOutputLedger?.id || null,
           currency,
-          lines: lines.map(l => ({
-            ledger_id: l.ledger_id,
+          lines: resolvedLines.map(l => ({
+            ledger_id: l.ledger_id || defaultIncomeLedgerId,
             description: l.description,
             quantity: l.quantity,
             rate: l.rate,

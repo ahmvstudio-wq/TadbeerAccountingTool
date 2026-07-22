@@ -118,11 +118,25 @@ export default function PurchaseVoucherPage() {
     const n = (l.group as any)?.nature
     return n === 'EXPENSE' || n === 'ASSET'
   })
+  const defaultExpenseLedgerId = expenseAssetAccounts[0]?.id || ledgers[0]?.id || ''
   const vatInputLedger = ledgers.find(l => l.name.toLowerCase().includes('vat') && (l.name.toLowerCase().includes('input') || l.name.toLowerCase().includes('receivable')))
 
   const subtotal = lines.reduce((s, l) => s + Number(l.amount || 0), 0)
   const vatTotal = lines.reduce((s, l) => s + Number(l.vat_amount || 0), 0)
   const grandTotal = subtotal + vatTotal
+
+  // Auto-resolve any empty ledger_id when ledgers load
+  useEffect(() => {
+    if (defaultExpenseLedgerId) {
+      setLines(prev => prev.map(l => {
+        if (!l.ledger_id) {
+          const item = items.find(i => i.id === l.item_id)
+          return { ...l, ledger_id: item?.expense_ledger_id || defaultExpenseLedgerId }
+        }
+        return l
+      }))
+    }
+  }, [defaultExpenseLedgerId, items])
 
   function updateLine(idx: number, field: keyof LineItem, value: any) {
     setLines(prev => {
@@ -137,7 +151,7 @@ export default function PurchaseVoucherPage() {
           next[idx].quantity = 1
           next[idx].amount = Number(item.buy_price || 0)
           next[idx].vat_rate = Number(item.tax_rate || 5.00)
-          next[idx].ledger_id = item.expense_ledger_id || ''
+          next[idx].ledger_id = item.expense_ledger_id || defaultExpenseLedgerId
         }
       }
 
@@ -162,7 +176,7 @@ export default function PurchaseVoucherPage() {
     const defaultItem = items[0]
     setLines(prev => [...prev, { 
       item_id: defaultItem?.id || '', 
-      ledger_id: defaultItem?.expense_ledger_id || '', 
+      ledger_id: defaultItem?.expense_ledger_id || defaultExpenseLedgerId, 
       description: defaultItem?.name || '', 
       quantity: 1, 
       rate: Number(defaultItem?.buy_price || 0), 
@@ -225,11 +239,17 @@ export default function PurchaseVoucherPage() {
     if (!supplierInvoiceRef.trim()) { setError('Supplier Invoice Ref is required.'); return }
     if (!narration.trim()) { setError('Narration is required.'); return }
     
-    if (lines.some(l => !l.ledger_id)) {
+    // Ensure all lines have a valid ledger_id
+    const resolvedLines = lines.map(l => ({
+      ...l,
+      ledger_id: l.ledger_id || defaultExpenseLedgerId
+    }))
+
+    if (resolvedLines.some(l => !l.ledger_id)) {
       setError('Please select an account ledger for all lines.')
       return
     }
-    if (lines.some(l => l.amount <= 0)) { setError('All line items must have a positive amount.'); return }
+    if (resolvedLines.some(l => l.amount <= 0)) { setError('All line items must have a positive amount.'); return }
 
     setSaving(true)
     try {
@@ -251,8 +271,8 @@ export default function PurchaseVoucherPage() {
           company_id: companyId,
           vat_ledger_id: vatInputLedger?.id || null,
           supplier_invoice_ref: supplierInvoiceRef.trim() || null,
-          lines: lines.map(l => ({
-            ledger_id: l.ledger_id,
+          lines: resolvedLines.map(l => ({
+            ledger_id: l.ledger_id || defaultExpenseLedgerId,
             description: l.description,
             quantity: l.quantity,
             rate: l.rate,
@@ -454,13 +474,27 @@ export default function PurchaseVoucherPage() {
                     <tr key={idx}>
                       <td>{idx + 1}</td>
                       <td>
-                        <div style={{ display: 'flex', gap: '4px', alignItems: 'center' }}>
-                          <select className="form-control" value={line.item_id} onChange={e => updateLine(idx, 'item_id', e.target.value)} style={{ fontSize: '0.85rem', flex: 1 }}>
-                            {items.map(i => (
-                              <option key={i.id} value={i.id}>{i.name} ({i.code || 'No Code'})</option>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                          <div style={{ display: 'flex', gap: '4px', alignItems: 'center' }}>
+                            <select className="form-control" value={line.item_id} onChange={e => updateLine(idx, 'item_id', e.target.value)} style={{ fontSize: '0.85rem', flex: 1 }}>
+                              {items.map(i => (
+                                <option key={i.id} value={i.id}>{i.name} ({i.code || 'No Code'})</option>
+                              ))}
+                            </select>
+                            <button type="button" className="btn btn-outline btn-sm" onClick={() => setShowQuickAddExpense(true)} style={{ padding: '2px 6px', fontSize: '0.9rem', fontWeight: 'bold' }} title="Create Ledger">+</button>
+                          </div>
+                          <select
+                            className="form-control"
+                            value={line.ledger_id || defaultExpenseLedgerId}
+                            onChange={e => updateLine(idx, 'ledger_id', e.target.value)}
+                            style={{ fontSize: '0.75rem', color: '#4A5568', background: '#F8FAFC' }}
+                            title="Account Ledger debited"
+                          >
+                            <option value="">— Select Account Ledger —</option>
+                            {expenseAssetAccounts.map(l => (
+                              <option key={l.id} value={l.id}>{l.name} [{l.account_code}]</option>
                             ))}
                           </select>
-                          <button type="button" className="btn btn-outline btn-sm" onClick={() => setShowQuickAddExpense(true)} style={{ padding: '2px 6px', fontSize: '0.9rem', fontWeight: 'bold' }} title="Create Ledger">+</button>
                         </div>
                       </td>
                       <td>
