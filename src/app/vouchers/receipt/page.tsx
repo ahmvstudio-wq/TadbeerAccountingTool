@@ -257,11 +257,9 @@ export default function ReceiptVoucherPage() {
           '<html><head><title>Print</title>' +
           '<style>' +
           '@page { size: A4 portrait; margin: 5mm; }' +
-          '* { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }' +
+          '* { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; box-sizing: border-box; }' +
           'body { font-family: Inter, sans-serif; margin: 0; padding: 0; color: #1a1a1a; }' +
-          'table { page-break-inside: auto; width: 100%; }' +
-          'tr { page-break-inside: avoid; }' +
-          'thead { display: table-header-group; }' +
+          '#printable-voucher { min-height: 285mm !important; display: flex !important; flex-direction: column !important; justify-content: space-between !important; border: none !important; box-shadow: none !important; }' +
           'img { max-width: 100%; height: auto; }' +
           '</style></head><body>' + el.outerHTML + '</body></html>'
         )
@@ -281,9 +279,9 @@ export default function ReceiptVoucherPage() {
       <style>
         @page { size: A4 portrait; margin: 5mm; }
         body { font-family: 'Inter', sans-serif; margin: 0; padding: 0; color: #1a1a1a; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+        #printable-voucher { min-height: 285mm !important; display: flex !important; flex-direction: column !important; justify-content: space-between !important; border: none !important; box-shadow: none !important; }
         @media print {
           body { margin: 0; padding: 0; }
-          #printable-voucher { border: none !important; }
         }
       </style></head><body>${el.outerHTML}</body></html>
     `)

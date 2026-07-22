@@ -1048,11 +1048,24 @@ tbody tr:hover { background: var(--color-surface-alt); }
 
   /* Page numbering via CSS counter */
   @page {
+    size: A4 portrait;
+    margin: 5mm;
     @bottom-center {
       content: "Page " counter(page) " of " counter(pages);
       font-size: 8pt;
       color: #8F9994;
     }
+  }
+
+  #printable-voucher {
+    border: none !important;
+    box-shadow: none !important;
+    min-height: 285mm !important;
+    height: 285mm !important;
+    padding: 0 !important;
+    display: flex !important;
+    flex-direction: column !important;
+    justify-content: space-between !important;
   }
 
   .only-print { display: inline-block !important; }
