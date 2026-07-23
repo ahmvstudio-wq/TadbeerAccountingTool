@@ -225,6 +225,7 @@ export function PrintableVoucher({ voucher, journalLines, voucherLines = [], set
         rate: Number(jl.amount),
         amount: Number(jl.amount),
         vat_amount: 0,
+        type: jl.type,
       }))
     } else {
       // Determine which side represents the offset / particulars details
@@ -393,14 +394,23 @@ export function PrintableVoucher({ voucher, journalLines, voucherLines = [], set
       <div style={{ flex: 1, marginBottom: '0.75rem' }}>
         <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.8rem' }}>
           <thead>
-            <tr style={{ background: '#EDF2F7', borderTop: '1px solid #CBD5E0', borderBottom: '2px solid #CBD5E0' }}>
-              <th style={{ padding: '6px 8px', textAlign: 'left', fontWeight: 700, color: '#2D3748', width: '3%' }}>#</th>
-              <th style={{ padding: '6px 8px', textAlign: 'left', fontWeight: 700, color: '#2D3748' }}>Particulars</th>
-              <th style={{ padding: '6px 8px', textAlign: 'right', fontWeight: 700, color: '#2D3748', width: '10%' }}>Qty</th>
-              <th style={{ padding: '6px 8px', textAlign: 'right', fontWeight: 700, color: '#2D3748', width: '15%' }}>Rate</th>
-              <th style={{ padding: '6px 8px', textAlign: 'right', fontWeight: 700, color: '#2D3748', width: '10%' }}>VAT</th>
-              <th style={{ padding: '6px 8px', textAlign: 'right', fontWeight: 700, color: '#2D3748', width: '17%' }}>Amount <OMRSymbol size={11} /></th>
-            </tr>
+            {voucher.type === 'JOURNAL' ? (
+              <tr style={{ background: '#EDF2F7', borderTop: '1px solid #CBD5E0', borderBottom: '2px solid #CBD5E0' }}>
+                <th style={{ padding: '6px 8px', textAlign: 'left', fontWeight: 700, color: '#2D3748', width: '3%' }}>#</th>
+                <th style={{ padding: '6px 8px', textAlign: 'left', fontWeight: 700, color: '#2D3748' }}>Particulars</th>
+                <th style={{ padding: '6px 8px', textAlign: 'right', fontWeight: 700, color: '#2D3748', width: '17%' }}>Dr.</th>
+                <th style={{ padding: '6px 8px', textAlign: 'right', fontWeight: 700, color: '#2D3748', width: '17%' }}>Cr.</th>
+              </tr>
+            ) : (
+              <tr style={{ background: '#EDF2F7', borderTop: '1px solid #CBD5E0', borderBottom: '2px solid #CBD5E0' }}>
+                <th style={{ padding: '6px 8px', textAlign: 'left', fontWeight: 700, color: '#2D3748', width: '3%' }}>#</th>
+                <th style={{ padding: '6px 8px', textAlign: 'left', fontWeight: 700, color: '#2D3748' }}>Particulars</th>
+                <th style={{ padding: '6px 8px', textAlign: 'right', fontWeight: 700, color: '#2D3748', width: '10%' }}>Qty</th>
+                <th style={{ padding: '6px 8px', textAlign: 'right', fontWeight: 700, color: '#2D3748', width: '15%' }}>Rate</th>
+                <th style={{ padding: '6px 8px', textAlign: 'right', fontWeight: 700, color: '#2D3748', width: '10%' }}>VAT</th>
+                <th style={{ padding: '6px 8px', textAlign: 'right', fontWeight: 700, color: '#2D3748', width: '17%' }}>Amount <OMRSymbol size={11} /></th>
+              </tr>
+            )}
           </thead>
           <tbody>
             {linesToRender && linesToRender.length > 0 ? (
@@ -410,18 +420,31 @@ export function PrintableVoucher({ voucher, journalLines, voucherLines = [], set
                   <td style={{ padding: '7px 8px', verticalAlign: 'top' }}>
                     <div style={{ fontWeight: 600, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>{line.description || 'Service'}</div>
                   </td>
-                  <td style={{ padding: '7px 8px', textAlign: 'right', verticalAlign: 'top' }}>
-                    {Number(line.quantity || 1).toFixed(1)}
-                  </td>
-                  <td style={{ padding: '7px 8px', textAlign: 'right', verticalAlign: 'top', fontVariantNumeric: 'tabular-nums' }}>
-                    {fmtNum(line.rate || line.amount || 0, cur)}
-                  </td>
-                  <td style={{ padding: '7px 8px', textAlign: 'right', verticalAlign: 'top', fontVariantNumeric: 'tabular-nums' }}>
-                    {fmtNum(line.vat_amount || 0, cur)}
-                  </td>
-                  <td style={{ padding: '7px 8px', textAlign: 'right', verticalAlign: 'top', fontWeight: 700, fontVariantNumeric: 'tabular-nums' }}>
-                    {fmtNum(Number(line.amount) + Number(line.vat_amount || 0), cur)}
-                  </td>
+                  {voucher.type === 'JOURNAL' ? (
+                    <>
+                      <td style={{ padding: '7px 8px', textAlign: 'right', verticalAlign: 'top', fontVariantNumeric: 'tabular-nums' }}>
+                        {line.type === 'Dr' ? fmtNum(line.amount || 0, cur) : '—'}
+                      </td>
+                      <td style={{ padding: '7px 8px', textAlign: 'right', verticalAlign: 'top', fontVariantNumeric: 'tabular-nums' }}>
+                        {line.type === 'Cr' ? fmtNum(line.amount || 0, cur) : '—'}
+                      </td>
+                    </>
+                  ) : (
+                    <>
+                      <td style={{ padding: '7px 8px', textAlign: 'right', verticalAlign: 'top' }}>
+                        {Number(line.quantity || 1).toFixed(1)}
+                      </td>
+                      <td style={{ padding: '7px 8px', textAlign: 'right', verticalAlign: 'top', fontVariantNumeric: 'tabular-nums' }}>
+                        {fmtNum(line.rate || line.amount || 0, cur)}
+                      </td>
+                      <td style={{ padding: '7px 8px', textAlign: 'right', verticalAlign: 'top', fontVariantNumeric: 'tabular-nums' }}>
+                        {fmtNum(line.vat_amount || 0, cur)}
+                      </td>
+                      <td style={{ padding: '7px 8px', textAlign: 'right', verticalAlign: 'top', fontWeight: 700, fontVariantNumeric: 'tabular-nums' }}>
+                        {fmtNum(Number(line.amount) + Number(line.vat_amount || 0), cur)}
+                      </td>
+                    </>
+                  )}
                 </tr>
               ))
             ) : (
@@ -430,12 +453,37 @@ export function PrintableVoucher({ voucher, journalLines, voucherLines = [], set
                 <td style={{ padding: '7px 8px', verticalAlign: 'top' }}>
                   <div style={{ fontWeight: 600 }}>{voucher.narration || 'Service'}</div>
                 </td>
-                <td style={{ padding: '7px 8px', textAlign: 'right', verticalAlign: 'top' }}>1.0</td>
-                <td style={{ padding: '7px 8px', textAlign: 'right', verticalAlign: 'top' }}>{fmtNum(voucher.subtotal || voucher.amount || 0, cur)}</td>
-                <td style={{ padding: '7px 8px', textAlign: 'right', verticalAlign: 'top' }}>{fmtNum(voucher.vat_total || 0, cur)}</td>
-                <td style={{ padding: '7px 8px', textAlign: 'right', verticalAlign: 'top', fontWeight: 700 }}>{fmtNum(grandTotal, cur)}</td>
+                {voucher.type === 'JOURNAL' ? (
+                  <>
+                    <td style={{ padding: '7px 8px', textAlign: 'right', verticalAlign: 'top' }}>{fmtNum(voucher.amount || 0, cur)}</td>
+                    <td style={{ padding: '7px 8px', textAlign: 'right', verticalAlign: 'top' }}>{fmtNum(voucher.amount || 0, cur)}</td>
+                  </>
+                ) : (
+                  <>
+                    <td style={{ padding: '7px 8px', textAlign: 'right', verticalAlign: 'top' }}>1.0</td>
+                    <td style={{ padding: '7px 8px', textAlign: 'right', verticalAlign: 'top' }}>{fmtNum(voucher.subtotal || voucher.amount || 0, cur)}</td>
+                    <td style={{ padding: '7px 8px', textAlign: 'right', verticalAlign: 'top' }}>{fmtNum(voucher.vat_total || 0, cur)}</td>
+                    <td style={{ padding: '7px 8px', textAlign: 'right', verticalAlign: 'top', fontWeight: 700 }}>{fmtNum(grandTotal, cur)}</td>
+                  </>
+                )}
               </tr>
             )}
+            {voucher.type === 'JOURNAL' && (() => {
+              const totalDebit = journalLines.filter(jl => jl.type === 'Dr').reduce((sum, jl) => sum + Number(jl.amount), 0)
+              const totalCredit = journalLines.filter(jl => jl.type === 'Cr').reduce((sum, jl) => sum + Number(jl.amount), 0)
+              return (
+                <tr style={{ fontWeight: 700 }}>
+                  <td style={{ padding: '7px 8px' }}></td>
+                  <td style={{ padding: '7px 8px', textAlign: 'right', fontWeight: 700 }}>Total:</td>
+                  <td style={{ padding: '7px 8px', textAlign: 'right', fontVariantNumeric: 'tabular-nums', borderTop: '1px solid #2D3748', borderBottom: '3px double #2D3748', fontWeight: 800 }}>
+                    {fmtNum(totalDebit, cur)}
+                  </td>
+                  <td style={{ padding: '7px 8px', textAlign: 'right', fontVariantNumeric: 'tabular-nums', borderTop: '1px solid #2D3748', borderBottom: '3px double #2D3748', fontWeight: 800 }}>
+                    {fmtNum(totalCredit, cur)}
+                  </td>
+                </tr>
+              )
+            })()}
           </tbody>
         </table>
       </div>
@@ -475,34 +523,36 @@ export function PrintableVoucher({ voucher, journalLines, voucherLines = [], set
               )
             })()}
           </div>
-          <div style={{ flex: 0.9 }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.75rem' }}>
-              <tbody>
-                <tr style={{ borderBottom: '1px solid #CBD5E0' }}>
-                  <td style={{ padding: '4px 6px', fontWeight: 700 }}>Total value of supply</td>
-                  <td style={{ padding: '4px 6px', textAlign: 'right', fontWeight: 700, fontVariantNumeric: 'tabular-nums' }}>{fmtNum(voucher.subtotal || voucher.amount || 0, cur)}</td>
-                </tr>
-                <tr style={{ borderBottom: '1px solid #CBD5E0' }}>
-                  <td style={{ padding: '4px 6px', fontWeight: 700 }}>VAT</td>
-                  <td style={{ padding: '4px 6px', textAlign: 'right', fontWeight: 700, fontVariantNumeric: 'tabular-nums' }}>
-                    {fmtNum(voucher.vat_total || 0, cur)}
-                  </td>
-                </tr>
-                <tr style={{ borderBottom: '1px solid #CBD5E0', background: '#F7FAFC' }}>
-                  <td style={{ padding: '4px 6px', fontWeight: 800 }}>Amount including VAT</td>
-                  <td style={{ padding: '4px 6px', textAlign: 'right', fontWeight: 800, fontVariantNumeric: 'tabular-nums' }}>
-                    <OMRSymbol size={12} /> {fmtNum(grandTotal, cur)}
-                  </td>
-                </tr>
-                <tr style={{ borderTop: '2px solid #2D3748', background: '#EDF2F7' }}>
-                  <td style={{ padding: '5px 6px', fontWeight: 900 }}>Balance Amount</td>
-                  <td style={{ padding: '5px 6px', textAlign: 'right', fontWeight: 900, fontVariantNumeric: 'tabular-nums' }}>
-                    <OMRSymbol size={12} /> {fmtNum(grandTotal, cur)}
-                  </td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
+          {voucher.type !== 'JOURNAL' && (
+            <div style={{ flex: 0.9 }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.75rem' }}>
+                <tbody>
+                  <tr style={{ borderBottom: '1px solid #CBD5E0' }}>
+                    <td style={{ padding: '4px 6px', fontWeight: 700 }}>Total value of supply</td>
+                    <td style={{ padding: '4px 6px', textAlign: 'right', fontWeight: 700, fontVariantNumeric: 'tabular-nums' }}>{fmtNum(voucher.subtotal || voucher.amount || 0, cur)}</td>
+                  </tr>
+                  <tr style={{ borderBottom: '1px solid #CBD5E0' }}>
+                    <td style={{ padding: '4px 6px', fontWeight: 700 }}>VAT</td>
+                    <td style={{ padding: '4px 6px', textAlign: 'right', fontWeight: 700, fontVariantNumeric: 'tabular-nums' }}>
+                      {fmtNum(voucher.vat_total || 0, cur)}
+                    </td>
+                  </tr>
+                  <tr style={{ borderBottom: '1px solid #CBD5E0', background: '#F7FAFC' }}>
+                    <td style={{ padding: '4px 6px', fontWeight: 800 }}>Amount including VAT</td>
+                    <td style={{ padding: '4px 6px', textAlign: 'right', fontWeight: 800, fontVariantNumeric: 'tabular-nums' }}>
+                      <OMRSymbol size={12} /> {fmtNum(grandTotal, cur)}
+                    </td>
+                  </tr>
+                  <tr style={{ borderTop: '2px solid #2D3748', background: '#EDF2F7' }}>
+                    <td style={{ padding: '5px 6px', fontWeight: 900 }}>Balance Amount</td>
+                    <td style={{ padding: '5px 6px', textAlign: 'right', fontWeight: 900, fontVariantNumeric: 'tabular-nums' }}>
+                      <OMRSymbol size={12} /> {fmtNum(grandTotal, cur)}
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          )}
         </div>
 
         {/* Amounts in Words */}

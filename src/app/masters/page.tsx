@@ -667,9 +667,7 @@ function LedgerFormModal({ groups, companyId, ledgerToEdit, onClose, onSaved }: 
     const sign = Number(data.opening_balance) < 0 ? 'Cr' : 'Dr'
     const absVal = Math.abs(Number(data.opening_balance))
 
-    const finalDesc = isExpenseAccount && data.expense_category
-      ? `[${data.expense_category}] ${data.description || ''}`
-      : data.description || ''
+    const finalDesc = data.description || ''
 
     const { expense_category, ...submitData } = data as any
     const autoClassification = deriveClassification(selectedGroup?.nature)
@@ -791,20 +789,7 @@ function LedgerFormModal({ groups, companyId, ledgerToEdit, onClose, onSaved }: 
               </span>
             </div>
 
-            {/* Expense Direct / Indirect — only for EXPENSE groups */}
-            {isExpenseAccount && (
-              <div className="form-group">
-                <label className="form-label required">Expense Type</label>
-                <select className="form-control" {...register('expense_category')} required>
-                  <option value="">— Select Expense Type —</option>
-                  <option value="Direct">Direct Expense (COGS, Direct Labour, Raw Materials)</option>
-                  <option value="Indirect">Indirect Expense (Rent, Utilities, Admin Salaries)</option>
-                </select>
-                <span style={{ fontSize: '0.7rem', color: 'var(--color-text-secondary)', marginTop: 4, display: 'block' }}>
-                  Direct expenses affect <strong>Gross Profit</strong>. Indirect expenses affect <strong>Net Profit</strong>.
-                </span>
-              </div>
-            )}
+
 
             {/* Account Code — read only */}
             <div className="form-group">
