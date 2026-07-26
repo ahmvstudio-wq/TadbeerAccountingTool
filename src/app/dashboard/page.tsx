@@ -33,7 +33,7 @@ export default function DashboardPage() {
   const [availableMonths, setAvailableMonths] = useState<string[]>([])
   const [selectedMonth, setSelectedMonth] = useState<string>('ALL') // Default 'ALL' or specific YYYY-MM
 
-  // Fetch available transaction months for filter
+  // Fetch available transaction months for filter dropdown
   useEffect(() => {
     async function fetchMonths() {
       try {
@@ -73,7 +73,7 @@ export default function DashboardPage() {
         monthEnd = `${selectedMonth}-${String(lastDay).padStart(2, '0')}`
       }
 
-      // Build queries based on selected month filter
+      // 1. Fetch journal lines for Period Income & Expenses
       let jLinesQuery = (supabase as any)
         .from('journal_lines')
         .select('ledger_id, type, amount, date, ledger:ledgers(group:groups(nature))')
@@ -84,10 +84,16 @@ export default function DashboardPage() {
 
       const { data: jLines } = await jLinesQuery
 
-      // Fetch ALL journal lines for balance calculation
-      const { data: allLines } = await (supabase as any)
+      // 2. Fetch journal lines up to the end of the selected period for Period-Cumulative Receivables & Payables
+      let periodLinesQuery = (supabase as any)
         .from('journal_lines')
-        .select('ledger_id, type, amount, ledger:ledgers(group:groups(nature))')
+        .select('ledger_id, type, amount, date, ledger:ledgers(group:groups(nature))')
+
+      if (monthEnd) {
+        periodLinesQuery = periodLinesQuery.lte('date', monthEnd)
+      }
+
+      const { data: periodLines } = await periodLinesQuery
 
       // Fetch ledgers for balance calculation
       const { data: ledgers } = await (supabase as any)
@@ -121,21 +127,28 @@ export default function DashboardPage() {
       const { count: salesCount } = await salesCountQuery
       const { count: purchaseCount } = await purchaseCountQuery
 
-      // Receivables & Payables (accumulated up to selected period or overall)
-      let receivables = 0
-      let payables = 0
+      // Calculate Period-Specific Receivables & Payables dynamically
+      let periodReceivables = 0
+      let periodPayables = 0
+
       for (const ledger of ledgers ?? []) {
         const nature = (ledger.group as any)?.nature
         const opBal = Number(ledger.opening_balance || 0)
         const opType = ledger.opening_type || 'Dr'
-        const drSum = (allLines ?? []).filter((l: any) => l.ledger_id === ledger.id && l.type === 'Dr').reduce((s: number, l: any) => s + Number(l.amount), 0)
-        const crSum = (allLines ?? []).filter((l: any) => l.ledger_id === ledger.id && l.type === 'Cr').reduce((s: number, l: any) => s + Number(l.amount), 0)
+
+        // Calculate debits & credits up to selected period end
+        const drSum = (periodLines ?? []).filter((l: any) => l.ledger_id === ledger.id && l.type === 'Dr').reduce((s: number, l: any) => s + Number(l.amount), 0)
+        const crSum = (periodLines ?? []).filter((l: any) => l.ledger_id === ledger.id && l.type === 'Cr').reduce((s: number, l: any) => s + Number(l.amount), 0)
+
+        // Net balance calculation
+        const assetBalance = (opType === 'Dr' ? opBal : -opBal) + drSum - crSum
+        const liabilityBalance = (opType === 'Cr' ? opBal : -opBal) + crSum - drSum
         
-        if (nature === 'ASSET' && (opType === 'Dr' ? opBal : -opBal) + drSum - crSum > 0) {
-          receivables += (opType === 'Dr' ? opBal : -opBal) + drSum - crSum
+        if (nature === 'ASSET' && assetBalance > 0) {
+          periodReceivables += assetBalance
         }
-        if (nature === 'LIABILITY' && (opType === 'Cr' ? opBal : -opBal) + crSum - drSum > 0) {
-          payables += (opType === 'Cr' ? opBal : -opBal) + crSum - drSum
+        if (nature === 'LIABILITY' && liabilityBalance > 0) {
+          periodPayables += liabilityBalance
         }
       }
 
@@ -151,8 +164,8 @@ export default function DashboardPage() {
       setKpis([
         { label: `Income (${periodLabel})`, value: formatVal(periodIncome), icon: <TrendingUp size={20} />, color: '#22c55e', bgColor: 'rgba(34,197,94,0.1)', href: '/reports/profit-loss', isCurrency: true },
         { label: `Expenses (${periodLabel})`, value: formatVal(periodExpense), icon: <TrendingDown size={20} />, color: '#ef4444', bgColor: 'rgba(239,68,68,0.1)', href: '/reports/profit-loss', isCurrency: true },
-        { label: 'Total Receivables', value: formatVal(receivables), icon: <Receipt size={20} />, color: '#3b82f6', bgColor: 'rgba(59,130,246,0.1)', isCurrency: true },
-        { label: 'Total Payables', value: formatVal(payables), icon: <CreditCard size={20} />, color: '#f59e0b', bgColor: 'rgba(245,158,11,0.1)', isCurrency: true },
+        { label: `Receivables (${periodLabel})`, value: formatVal(periodReceivables), icon: <Receipt size={20} />, color: '#3b82f6', bgColor: 'rgba(59,130,246,0.1)', isCurrency: true },
+        { label: `Payables (${periodLabel})`, value: formatVal(periodPayables), icon: <CreditCard size={20} />, color: '#f59e0b', bgColor: 'rgba(245,158,11,0.1)', isCurrency: true },
         { label: `Sales Invoices (${periodLabel})`, value: String(salesCount ?? 0), icon: <FileText size={20} />, color: '#8b5cf6', bgColor: 'rgba(139,92,246,0.1)', href: '/vouchers?type=SALE' },
         { label: `Purchases (${periodLabel})`, value: String(purchaseCount ?? 0), icon: <ShoppingCart size={20} />, color: '#f59e0b', bgColor: 'rgba(245,158,11,0.1)', href: '/vouchers?type=PURCHASE' },
       ])
