@@ -248,7 +248,7 @@ export function PrintableVoucher({ voucher, journalLines, voucherLines = [], set
           return !isVat;
         })
         .map(jl => ({
-          description: jl.ledger?.name || 'Particulars',
+          description: jl.narration || jl.ledger?.name || 'Particulars',
           quantity: 1,
           rate: Number(jl.amount),
           amount: Number(jl.amount),
