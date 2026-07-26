@@ -493,9 +493,13 @@ export function PrintableVoucher({ voucher, journalLines, voucherLines = [], set
         {/* Notes & Summary Grid */}
         <div style={{ display: 'flex', justifyContent: 'space-between', gap: '1.5rem', alignItems: 'flex-start', marginBottom: '0.75rem' }}>
           <div style={{ flex: 1.1 }}>
-            <div style={{ fontSize: '0.75rem', fontWeight: 700, textDecoration: 'underline', marginBottom: '3px' }}>Additional Notes:</div>
-            <p style={{ margin: 0, fontSize: '0.75rem', color: '#4A5568', lineHeight: '1.3' }}>{voucher.narration}</p>
-            {voucher.notes && (
+            {voucher.narration && !voucher.narration.startsWith('Original ') && (
+              <>
+                <div style={{ fontSize: '0.75rem', fontWeight: 700, textDecoration: 'underline', marginBottom: '3px' }}>Additional Notes:</div>
+                <p style={{ margin: 0, fontSize: '0.75rem', color: '#4A5568', lineHeight: '1.3' }}>{voucher.narration}</p>
+              </>
+            )}
+            {voucher.notes && !voucher.notes.startsWith('Original ') && (
               <p style={{ margin: '6px 0 0', fontSize: '0.75rem', color: '#4A5568', lineHeight: '1.3' }}>
                 <strong>Notes:</strong> {voucher.notes}
               </p>
