@@ -115,8 +115,11 @@ export default function PurchaseVoucherPage() {
     return gn.includes('creditor') || gn.includes('supplier')
   })
   const expenseAssetAccounts = ledgers.filter(l => {
+    const gn = (l.group as any)?.name?.toLowerCase() || ''
     const n = (l.group as any)?.nature
-    return n === 'EXPENSE' || n === 'ASSET'
+    const isCreditor = gn.includes('creditor') || gn.includes('supplier')
+    const isCustomer = gn.includes('debtor') || gn.includes('customer')
+    return (n === 'EXPENSE' || (n === 'ASSET' && !isCustomer)) && !isCreditor
   })
   const defaultExpenseLedgerId = expenseAssetAccounts[0]?.id || ledgers[0]?.id || ''
   const vatInputLedger = ledgers.find(l => l.name.toLowerCase().includes('vat') && (l.name.toLowerCase().includes('input') || l.name.toLowerCase().includes('receivable')))
