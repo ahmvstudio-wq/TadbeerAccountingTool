@@ -477,27 +477,14 @@ export default function PurchaseVoucherPage() {
                     <tr key={idx}>
                       <td>{idx + 1}</td>
                       <td>
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                          <div style={{ display: 'flex', gap: '4px', alignItems: 'center' }}>
-                            <select className="form-control" value={line.item_id} onChange={e => updateLine(idx, 'item_id', e.target.value)} style={{ fontSize: '0.85rem', flex: 1 }}>
-                              {items.map(i => (
-                                <option key={i.id} value={i.id}>{i.name} ({i.code || 'No Code'})</option>
-                              ))}
-                            </select>
-                            <button type="button" className="btn btn-outline btn-sm" onClick={() => setShowQuickAddExpense(true)} style={{ padding: '2px 6px', fontSize: '0.9rem', fontWeight: 'bold' }} title="Create Ledger">+</button>
-                          </div>
-                          <select
-                            className="form-control"
-                            value={line.ledger_id || defaultExpenseLedgerId}
-                            onChange={e => updateLine(idx, 'ledger_id', e.target.value)}
-                            style={{ fontSize: '0.75rem', color: '#4A5568', background: '#F8FAFC' }}
-                            title="Account Ledger debited"
-                          >
-                            <option value="">— Select Account Ledger —</option>
-                            {expenseAssetAccounts.map(l => (
-                              <option key={l.id} value={l.id}>{l.name} [{l.account_code}]</option>
+                        <div style={{ display: 'flex', gap: '4px', alignItems: 'center' }}>
+                          <select className="form-control" value={line.item_id} onChange={e => updateLine(idx, 'item_id', e.target.value)} style={{ fontSize: '0.85rem', flex: 1 }}>
+                            <option value="">— Select Service Line —</option>
+                            {items.map(i => (
+                              <option key={i.id} value={i.id}>{i.name} ({i.code || 'No Code'})</option>
                             ))}
                           </select>
+                          <button type="button" className="btn btn-outline btn-sm" onClick={() => setShowQuickAddExpense(true)} style={{ padding: '2px 6px', fontSize: '0.9rem', fontWeight: 'bold' }} title="Create Ledger">+</button>
                         </div>
                       </td>
                       <td>
