@@ -1,79 +1,186 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-  <meta charset="utf-8">
-  <title>TAX INVOICE - SAL-00002</title>
-  <style>
-    body { font-family: 'Segoe UI', Arial, sans-serif; background: #fff; margin: 0; padding: 20px; color: #2d3748; }
-    .invoice-card { max-width: 800px; margin: 0 auto; border: 1px solid #e2e8f0; border-radius: 8px; padding: 30px; }
-    .header { display: flex; justify-content: space-between; border-bottom: 2px solid #2b6cb0; padding-bottom: 15px; margin-bottom: 20px; }
-    .title { font-size: 24px; font-weight: bold; color: #2b6cb0; }
-    .info-grid { display: flex; justify-content: space-between; margin-bottom: 25px; background: #f7fafc; padding: 15px; border-radius: 6px; }
-    table { width: 100%; border-collapse: collapse; margin-bottom: 25px; }
-    th { background: #ebf8ff; color: #2b6cb0; text-align: left; padding: 10px; border-bottom: 2px solid #cbd5e0; }
-    td { padding: 10px; border-bottom: 1px solid #e2e8f0; }
-    .total-box { text-align: right; font-size: 18px; font-weight: bold; color: #2b6cb0; margin-top: 15px; }
-    .footer { margin-top: 40px; text-align: center; font-size: 12px; color: #a0aec0; border-top: 1px solid #e2e8f0; padding-top: 15px; }
-  </style>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Invoice TTT/25/070112 - Al Qurum Perfume</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap');
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: 'Inter', Arial, sans-serif; background: #f5f5f5; display: flex; justify-content: center; align-items: flex-start; min-height: 100vh; padding: 20px; }
+  .invoice { width: 210mm; min-height: 277mm; background: #fff; border: 1px solid #CBD5E0; border-radius: 4px; padding: 12px 14px; display: flex; flex-direction: column; justify-content: space-between; font-size: 13px; color: #1A202C; }
+  .header { display: flex; justify-content: space-between; align-items: flex-start; gap: 2rem; margin-bottom: 8px; }
+  .company-name { font-size: 16.8px; font-weight: 800; color: #163B40; text-transform: uppercase; letter-spacing: -0.02em; margin-bottom: 2px; }
+  .company-addr { font-size: 10.4px; color: #4A5568; font-weight: 500; line-height: 1.4; }
+  .logo-area { display: flex; flex-direction: column; align-items: flex-end; }
+  .logo-placeholder { background: #163B40; color: #fff; font-size: 10px; font-weight: 800; padding: 6px 16px; border-radius: 3px; letter-spacing: 0.05em; }
+  .cr-no { font-size: 10.4px; font-weight: 700; color: #1A202C; margin-top: 4px; text-align: right; }
+  .title-bar { text-align: center; border-top: 2px solid #0284c7; border-bottom: 2px solid #0284c7; padding: 4px 0; margin-bottom: 12px; }
+  .title-bar h1 { font-size: 18.4px; font-weight: 800; color: #0284c7; letter-spacing: 0.1em; text-transform: uppercase; }
+  .details-grid { display: flex; justify-content: space-between; gap: 24px; margin-bottom: 14px; }
+  .party-box { flex: 1.2; border: 1px solid #E2E8F0; border-radius: 4px; }
+  .party-box-header { background: #EDF2F7; padding: 5px 8px; font-size: 11.5px; font-weight: 700; border-bottom: 1px solid #E2E8F0; }
+  .party-box-body { padding: 6px 8px; line-height: 1.4; }
+  .party-name { font-weight: 700; font-size: 13.6px; }
+  .party-addr { color: #4A5568; font-size: 11.5px; }
+  .party-vatin { margin-top: 4px; font-weight: 600; color: #4A5568; font-size: 11.5px; }
+  .meta-box { flex: 0.8; border: 1px solid #E2E8F0; border-radius: 4px; align-self: flex-start; }
+  .meta-box table { width: 100%; border-collapse: collapse; font-size: 12px; }
+  .meta-box td { padding: 5px 6px; border-bottom: 1px solid #E2E8F0; }
+  .meta-box td:first-child { font-weight: 600; color: #4A5568; }
+  .meta-box td:last-child { font-weight: 700; text-align: right; }
+  .particulars table { width: 100%; border-collapse: collapse; font-size: 12.8px; }
+  .particulars thead tr { background: #EDF2F7; border-top: 1px solid #CBD5E0; border-bottom: 2px solid #CBD5E0; }
+  .particulars thead th { padding: 6px 8px; font-weight: 700; color: #2D3748; }
+  .particulars tbody td { padding: 10px 8px; border-bottom: 1px solid #E2E8F0; vertical-align: top; }
+  .bottom-grid { display: flex; justify-content: space-between; gap: 24px; align-items: flex-start; margin-bottom: 12px; }
+  .notes-col { flex: 1.1; }
+  .notes-label { font-size: 12px; font-weight: 700; text-decoration: underline; margin-bottom: 3px; }
+  .notes-text { font-size: 12px; color: #4A5568; line-height: 1.4; }
+  .summary-col { flex: 0.9; }
+  .summary-col table { width: 100%; border-collapse: collapse; font-size: 12px; }
+  .summary-col td { padding: 4px 6px; border-bottom: 1px solid #CBD5E0; }
+  .summary-col .total-row { background: #EDF2F7; border-top: 2px solid #2D3748; }
+  .summary-col .total-row td { font-weight: 900; }
+  .words-section { border-top: 1px solid #CBD5E0; padding-top: 6px; margin-bottom: 10px; }
+  .words-label { font-size: 12px; font-weight: 700; text-decoration: underline; margin-bottom: 2px; }
+  .words-text { font-size: 12px; font-style: italic; font-weight: 600; }
+  .payment-section { margin-bottom: 10px; max-width: 480px; }
+  .payment-label { font-size: 12px; font-weight: 700; text-decoration: underline; margin-bottom: 4px; }
+  .payment-section table { width: 100%; border-collapse: collapse; border: 1px solid #CBD5E0; font-size: 11.5px; }
+  .payment-section td { padding: 3px 6px; border-bottom: 1px solid #CBD5E0; }
+  .payment-section td:first-child { background: #EDF2F7; font-weight: 700; white-space: nowrap; width: 28%; }
+  .payment-section td:last-child { font-weight: 600; }
+  .sig-footer { display: flex; justify-content: space-between; align-items: flex-end; margin-top: 4px; margin-bottom: 4px; }
+  .sig-box { display: flex; flex-direction: column; align-items: center; }
+  .sig-line { width: 135px; height: 50px; border-bottom: 1px solid #CBD5E0; margin-bottom: 4px; }
+  .sig-label { font-size: 10px; color: #718096; font-weight: 600; }
+  .stamp-box { display: flex; flex-direction: column; align-items: center; margin-right: 16px; }
+  .stamp-circle { width: 80px; height: 80px; border: 2px solid #CBD5E0; border-radius: 50%; display: flex; align-items: center; justify-content: center; }
+  .stamp-label { font-size: 10px; font-weight: 700; color: #718096; margin-top: 2px; }
+  .computer-gen { text-align: center; font-size: 10px; color: #718096; border-top: 1px dashed #E2E8F0; padding-top: 4px; margin-top: 4px; }
+  @media print {
+    body { background: #fff; padding: 0; }
+    .invoice { border: none; width: 100%; min-height: auto; }
+  }
+</style>
 </head>
 <body>
-  <div class="invoice-card">
+<div class="invoice">
+  <!-- Header -->
+  <div>
     <div class="header">
       <div>
-        <div class="title">TADBEER TRANSFORMATIONS</div>
-        <div style="font-size: 12px; color: #718096;">IT & Management Consulting | Sultanate of Oman</div>
+        <div class="company-name">TADBEER TRANSFORMATIONS TRADING</div>
+        <div class="company-addr">OFFICE NO: 113/114, 1ST FLOOR, AL NOOR PLAZA, MADINAT QABOOS,</div>
+        <div class="company-addr">MUSCAT, SULTANATE OF OMAN</div>
+        <div class="company-addr" style="margin-top:2px;">Email: operation@tadbeertt.com</div>
+        <div class="company-addr">Tel: +968 7721 3606</div>
       </div>
-      <div style="text-align: right;">
-        <h2 style="margin: 0; color: #2d3748;">TAX INVOICE</h2>
-        <div style="font-size: 14px; font-weight: bold;">SAL-00002</div>
-        <div style="font-size: 12px; color: #718096;">Ref: TTT/25/070112</div>
-      </div>
-    </div>
-
-    <div class="info-grid">
-      <div>
-        <strong>Billed To:</strong><br>
-        <span style="font-size: 16px; color: #2b6cb0; font-weight: bold;">Al Qurum Perfume</span><br>
-        PO Box 243, PC 114, Ghubra<br>
-        Muscat, Sultanate of Oman
-      </div>
-      <div style="text-align: right;">
-        <strong>Invoice Date:</strong> 21/08/2025<br>
-        <strong>Currency:</strong> OMR (Omani Rial)<br>
-        <strong>Status:</strong> Issued & Recorded
+      <div class="logo-area">
+        <div class="logo-placeholder">TADBEER<br/>TRANSFORMATIONS</div>
+        <div class="cr-no">CR NO: 1613378</div>
       </div>
     </div>
 
+    <div class="title-bar"><h1>SALES INVOICE</h1></div>
+
+    <!-- Party & Meta Grid -->
+    <div class="details-grid">
+      <div class="party-box">
+        <div class="party-box-header">Customer Details</div>
+        <div class="party-box-body">
+          <div class="party-name">Al Qurum Perfume</div>
+          <div class="party-addr">PO Box 243, PC 114, Ghubra,</div>
+          <div class="party-addr">Muscat, Sultanate of Oman</div>
+          <div class="party-vatin">VATIN: <span style="color:#A0AEC0;">#N/A</span></div>
+        </div>
+      </div>
+      <div class="meta-box">
+        <table>
+          <tr><td>Invoice No:</td><td>SAL-00002</td></tr>
+          <tr><td>Invoice Date:</td><td>21-Aug-25</td></tr>
+          <tr><td>Proposal Ref:</td><td>TTT/25/070112</td></tr>
+          <tr><td>Currency:</td><td>OMR</td></tr>
+          <tr style="border-bottom:none;"><td>Location:</td><td>Muscat, Oman</td></tr>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- Particulars -->
+  <div class="particulars" style="flex:1; margin-bottom:12px;">
     <table>
       <thead>
         <tr>
-          <th>#</th>
-          <th>Particulars / Description</th>
-          <th style="text-align: center;">Qty</th>
-          <th style="text-align: right;">Rate (OMR)</th>
-          <th style="text-align: right;">Amount (OMR)</th>
+          <th style="text-align:left;width:3%;">#</th>
+          <th style="text-align:left;">Particulars</th>
+          <th style="text-align:right;width:10%;">Qty</th>
+          <th style="text-align:right;width:18%;">Rate</th>
+          <th style="text-align:right;width:10%;">VAT</th>
+          <th style="text-align:right;width:18%;">Amount (OMR)</th>
         </tr>
       </thead>
       <tbody>
         <tr>
-          <td>1</td>
-          <td><strong>Training Need Analysis & Customer Survey</strong></td>
-          <td style="text-align: center;">1.0</td>
-          <td style="text-align: right;">280.000</td>
-          <td style="text-align: right;">280.000</td>
+          <td style="color:#718096;">1</td>
+          <td><div style="font-weight:600;">Training Need Analysis & Customer Survey</div></td>
+          <td style="text-align:right;">1.0</td>
+          <td style="text-align:right;font-variant-numeric:tabular-nums;">280.000</td>
+          <td style="text-align:right;">0.000</td>
+          <td style="text-align:right;font-weight:700;font-variant-numeric:tabular-nums;">280.000</td>
         </tr>
       </tbody>
     </table>
-
-    <div class="total-box">
-      Total Invoice Amount: OMR 280.000
-    </div>
-
-    
-
-    <div class="footer">
-      This is a computer-generated invoice issued by Tadbeer Transformations.
-    </div>
   </div>
+
+  <!-- Bottom -->
+  <div>
+    <!-- Notes + Summary -->
+    <div class="bottom-grid">
+      <div class="notes-col">
+        
+      </div>
+      <div class="summary-col">
+        <table>
+          <tr><td style="font-weight:700;">Total value of supply</td><td style="text-align:right;font-weight:700;">280.000</td></tr>
+          <tr><td style="font-weight:700;">VAT</td><td style="text-align:right;font-weight:700;">0.000</td></tr>
+          <tr><td style="font-weight:800;background:#F7FAFC;">Amount including VAT</td><td style="text-align:right;font-weight:800;background:#F7FAFC;">OMR 280.000</td></tr>
+          <tr class="total-row"><td>Balance Amount</td><td style="text-align:right;">OMR 280.000</td></tr>
+        </table>
+      </div>
+    </div>
+
+    <!-- Amount in Words -->
+    <div class="words-section">
+      <div class="words-label">Amounts in Words</div>
+      <div class="words-text">( Omani Rials Two Hundred and Eighty Only )</div>
+    </div>
+
+    <!-- Payment Instructions -->
+    <div class="payment-section">
+      <div class="payment-label">Payment Instructions</div>
+      <table>
+        <tr><td>Account No</td><td>0332-07960213-0017</td></tr>
+        <tr><td>Account Name</td><td>TADBEER TRANSFORMATIONS TRADING</td></tr>
+        <tr><td>Bank Name</td><td>Bank Muscat</td></tr>
+        <tr style="border-bottom:none;"><td>Branch</td><td>Main Branch</td></tr>
+      </table>
+    </div>
+
+    <!-- Signature -->
+    <div class="sig-footer">
+      <div class="sig-box">
+        <div class="sig-line"></div>
+        <div class="sig-label">Authorised Signatory</div>
+      </div>
+      <div class="stamp-box">
+        <div class="stamp-circle"><span style="font-size:8px;color:#718096;text-align:center;">Company<br/>Stamp</span></div>
+        <div class="stamp-label">Company Stamp</div>
+      </div>
+    </div>
+    <div class="computer-gen">*This is a computer generated document*</div>
+  </div>
+</div>
 </body>
 </html>

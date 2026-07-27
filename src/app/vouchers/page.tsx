@@ -1,11 +1,12 @@
 'use client'
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useState, useCallback, useRef } from 'react'
 import { Search, Eye, Trash2, AlertCircle, Printer, X, Mail, Download } from 'lucide-react'
 import { supabase as rawSupabase } from '@/lib/supabase/client'
 const supabase = rawSupabase as any
 import type { Voucher, VoucherType, JournalLine } from '@/lib/types'
 import { useUIStore } from '@/store/ui'
 import { PrintableVoucher } from '@/components/voucher/PrintableVoucher'
+import { createRoot } from 'react-dom/client'
 
 const TYPE_LABELS: Record<VoucherType, string> = {
   PURCHASE: 'Purchase', SALE: 'Sale', RECEIPT: 'Receipt',
@@ -16,6 +17,30 @@ const TYPE_COLORS: Record<VoucherType, string> = {
   RECEIPT: '#3b82f6', JOURNAL: '#8b5cf6',
 }
 const ALL_TYPES = Object.keys(TYPE_LABELS) as VoucherType[]
+
+// ⬇️  Vouchers flagged "Download Now" — Al Qurum Perfume screenshot entries
+const DOWNLOAD_NOW_VOUCHERS = new Set([
+  'SAL-00001', // Training Need Analysis & Customer Survey (1,120)
+  'SAL-00002', // Training Need Analysis & Customer Survey (280) → combined 1,400
+  'SAL-00026', // Marketing Managt. & Digi Maintenance - NOV'25
+  'SAL-00035', // Marketing Managt. & Digi Maintenance - DEC'25
+  'SAL-00045', // Marketing Managt. & Digi Maintenance - JAN'26
+  'SAL-00056', // Marketing Managt. & Digi Maintenance - FEB'26
+  'SAL-00062', // Marketing Managt. & Digi Maintenance - MAR'26
+  'SAL-00067', // Marketing Managt. & Digi Maintenance - APR'26
+  'SAL-00029', // AQP Training & Development - NOV'25
+  'SAL-00036', // AQP Training & Development - DEC'25
+  'SAL-00046', // AQP Training & Development - JAN'26
+  'SAL-00057', // AQP Training & Development - FEB'26
+  'SAL-00063', // AQP Training & Development - MAR'26
+  'SAL-00068', // AQP Training & Development - APR'26
+  'SAL-00082', // AQP HR Policy & Attendance Framework
+  'SAL-00051', // Website Development
+  'SAL-00052', // Branding Kits for Digital Marketing
+  'SAL-00053', // AQP Direct Cost - Digital Production
+  'SAL-00058', // AQP Direct Cost - FEB
+  'SAL-00037', // AQP Direct Cost - Santa Décor
+])
 
 export default function VouchersPage() {
   const activeCompanyId = useUIStore(state => state.activeCompanyId)
@@ -161,27 +186,100 @@ export default function VouchersPage() {
     } catch { setDeleteError('Network error.') }
   }
 
-  function handleDownload() {
+  async function handleDownload() {
     if (!selectedVoucher) return
     const el = document.getElementById('printable-voucher')
-    if (el) {
-      const win = window.open('', '_blank')
-      if (win) {
-        win.document.write(
-          '<html><head><title>Print</title>' +
-          '<style>' +
-          '@page { size: A4 portrait; margin: 10mm; }' +
-          '* { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }' +
-          'body { font-family: Inter, sans-serif; margin: 0; padding: 0; color: #1a1a1a; }' +
-          'table { page-break-inside: auto; width: 100%; }' +
-          'tr { page-break-inside: avoid; }' +
-          'thead { display: table-header-group; }' +
-          'img { max-width: 100%; height: auto; }' +
-          '</style></head><body>' + el.outerHTML + '</body></html>'
-        )
-        win.document.close()
-        setTimeout(() => { win.print() }, 500)
+    if (!el) return
+    setDownloading(true)
+    try {
+      const html2canvas = (await import('html2canvas')).default
+      const jsPDF = (await import('jspdf')).default
+      const canvas = await html2canvas(el, {
+        scale: 2,
+        useCORS: true,
+        backgroundColor: '#ffffff',
+        logging: false,
+      })
+      const imgData = canvas.toDataURL('image/png')
+      const pdf = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' })
+      const pageW = pdf.internal.pageSize.getWidth()
+      const pageH = pdf.internal.pageSize.getHeight()
+      const ratio = canvas.width / canvas.height
+      const imgW = pageW - 20
+      const imgH = imgW / ratio
+      const finalH = imgH > pageH - 20 ? pageH - 20 : imgH
+      pdf.addImage(imgData, 'PNG', 10, 10, imgW, finalH)
+      const fname = `${selectedVoucher.voucher_number}_${selectedVoucher.party_name || 'Invoice'}.pdf`
+        .replace(/[^a-z0-9_\-\.]/gi, '_')
+      pdf.save(fname)
+    } catch (err) {
+      console.error('PDF download error:', err)
+      // Fallback to print dialog
+      const el2 = document.getElementById('printable-voucher')
+      if (el2) {
+        const win = window.open('', '_blank')
+        if (win) {
+          win.document.write('<html><head><title>Print</title><style>@page{size:A4;margin:10mm}body{font-family:Inter,sans-serif;margin:0}*{-webkit-print-color-adjust:exact}</style></head><body>' + el2.outerHTML + '</body></html>')
+          win.document.close()
+          setTimeout(() => win.print(), 500)
+        }
       }
+    } finally {
+      setDownloading(false)
+    }
+  }
+
+  // Quick download from list row — fetches data and downloads PDF without opening modal
+  async function handleQuickDownload(v: Voucher) {
+    const tempDiv = document.createElement('div')
+    tempDiv.style.cssText = 'position:fixed;left:-9999px;top:0;width:794px;background:#fff;z-index:-1;'
+    document.body.appendChild(tempDiv)
+    try {
+      // Fetch journal lines for this voucher
+      const { data: jLines } = await supabase
+        .from('journal_lines')
+        .select('*, ledger:ledgers(name,account_code,classification)')
+        .eq('voucher_id', v.id)
+      const { data: vLines } = await supabase
+        .from('voucher_lines')
+        .select('*, ledger:ledgers(name,account_code)')
+        .eq('voucher_id', v.id)
+      const { data: settingsArr } = await supabase.from('company_settings').select('*').limit(1)
+      const settings = settingsArr?.[0] || null
+      const root = createRoot(tempDiv)
+      await new Promise<void>(resolve => {
+        root.render(
+          <div id="quick-print-target">
+            <PrintableVoucher
+              voucher={v}
+              journalLines={jLines || []}
+              voucherLines={vLines || []}
+              companySettings={settings}
+            />
+          </div>
+        )
+        setTimeout(resolve, 800)
+      })
+      const el = tempDiv.querySelector('#quick-print-target') as HTMLElement
+      if (!el) return
+      const html2canvas = (await import('html2canvas')).default
+      const jsPDF = (await import('jspdf')).default
+      const canvas = await html2canvas(el, { scale: 2, useCORS: true, backgroundColor: '#ffffff', logging: false })
+      const imgData = canvas.toDataURL('image/png')
+      const pdf = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' })
+      const pageW = pdf.internal.pageSize.getWidth()
+      const ratio = canvas.width / canvas.height
+      const imgW = pageW - 20
+      const imgH = imgW / ratio
+      const pageH = pdf.internal.pageSize.getHeight()
+      pdf.addImage(imgData, 'PNG', 10, 10, imgW, imgH > pageH - 20 ? pageH - 20 : imgH)
+      const fname = `${v.voucher_number}_${v.party_name || 'Invoice'}.pdf`.replace(/[^a-z0-9_\-\.]/gi, '_')
+      pdf.save(fname)
+      root.unmount()
+    } catch(err) {
+      console.error('Quick download error:', err)
+    } finally {
+      document.body.removeChild(tempDiv)
     }
   }
 
@@ -322,9 +420,24 @@ export default function VouchersPage() {
                 <tr><td colSpan={7} style={{ textAlign: 'center', padding: '2rem' }}>Loading...</td></tr>
               ) : filtered.length === 0 ? (
                 <tr><td colSpan={7} style={{ textAlign: 'center', padding: '2rem', color: 'var(--color-text-muted)' }}>No vouchers found</td></tr>
-              ) : filtered.map(v => (
-                <tr key={v.id}>
-                  <td style={{ fontWeight: 600, fontFamily: 'monospace' }}>{v.voucher_number}</td>
+              ) : filtered.map(v => {
+                const isDownloadNow = DOWNLOAD_NOW_VOUCHERS.has(v.voucher_number)
+                return (
+                <tr key={v.id} style={isDownloadNow ? { background: 'linear-gradient(90deg, #fffbeb 0%, #fef3c7 100%)', borderLeft: '3px solid #f59e0b' } : {}}>
+                  <td style={{ fontWeight: 600, fontFamily: 'monospace' }}>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                      <span>{v.voucher_number}</span>
+                      {isDownloadNow && (
+                        <span style={{
+                          fontSize: '0.6rem', fontWeight: 700, color: '#92400e',
+                          background: '#fde68a', border: '1px solid #f59e0b',
+                          borderRadius: 3, padding: '1px 5px', letterSpacing: '0.5px',
+                          textTransform: 'uppercase', display: 'inline-block',
+                          animation: 'pulse 2s infinite'
+                        }}>⬇ Download Now</span>
+                      )}
+                    </div>
+                  </td>
                   <td>
                     <span style={{
                       fontSize: '0.7rem', fontWeight: 600, padding: '2px 8px', borderRadius: 4,
@@ -342,13 +455,30 @@ export default function VouchersPage() {
                     {v.narration}
                   </td>
                   <td style={{ textAlign: 'center' }}>
-                    <div style={{ display: 'flex', gap: 4, justifyContent: 'center' }}>
-                      <button className="btn btn-ghost btn-sm" onClick={() => viewJournal(v)} title="View"><Eye size={14} /></button>
+                    <div style={{ display: 'flex', gap: 4, justifyContent: 'center', alignItems: 'center' }}>
+                      <button className="btn btn-ghost btn-sm" onClick={() => viewJournal(v)} title="View Invoice"><Eye size={14} /></button>
+                      {isDownloadNow ? (
+                        <button
+                          className="btn btn-sm"
+                          onClick={() => handleQuickDownload(v)}
+                          title="Download PDF — Required Now"
+                          style={{
+                            background: '#f59e0b', color: '#fff', border: 'none',
+                            fontWeight: 700, fontSize: '0.7rem', padding: '3px 10px',
+                            borderRadius: 4, display: 'flex', alignItems: 'center', gap: 4,
+                            cursor: 'pointer', boxShadow: '0 0 0 2px #fde68a',
+                          }}
+                        >
+                          <Download size={12} /> Download Now
+                        </button>
+                      ) : (
+                        <button className="btn btn-ghost btn-sm" onClick={() => handleQuickDownload(v)} title="Download PDF" style={{ color: '#0284c7' }}><Download size={14} /></button>
+                      )}
                       <button className="btn btn-ghost btn-sm" onClick={() => openDeleteModal(v.id)} title="Delete" style={{ color: 'var(--color-danger)' }}><Trash2 size={14} /></button>
                     </div>
                   </td>
                 </tr>
-              ))}
+              )})}
             </tbody>
           </table>
         </div>
