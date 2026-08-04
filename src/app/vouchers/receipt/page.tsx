@@ -1,11 +1,12 @@
 'use client'
 import { useEffect, useState, useCallback } from 'react'
-import { AlertCircle, CheckCircle, ArrowLeft, Printer, RefreshCw } from 'lucide-react'
+import { Plus, AlertCircle, CheckCircle, ArrowLeft, Printer, RefreshCw } from 'lucide-react'
 import Link from 'next/link'
 import { supabase } from '@/lib/supabase/client'
 import { numberToWords } from '@/lib/accounting'
 import type { Ledger, Voucher, JournalLine } from '@/lib/types'
 import { useUIStore } from '@/store/ui'
+import { QuickLedgerModal, QuickLedgerType } from '@/components/masters/QuickLedgerModal'
 import { PrintableVoucher } from '@/components/voucher/PrintableVoucher'
 
 export default function ReceiptVoucherPage() {
@@ -23,6 +24,8 @@ export default function ReceiptVoucherPage() {
   const [postedVoucher, setPostedVoucher] = useState<Voucher | null>(null)
   const [postedJournalLines, setPostedJournalLines] = useState<JournalLine[]>([])
   const [loadingJournal, setLoadingJournal] = useState(false)
+  
+  const [quickAddType, setQuickAddType] = useState<QuickLedgerType | null>(null)
 
   const [date, setDate] = useState(new Date().toISOString().split('T')[0])
   const [customerId, setCustomerId] = useState('')
@@ -147,15 +150,15 @@ export default function ReceiptVoucherPage() {
       setPostedJournalLines(jLines ?? [])
       setLoadingJournal(false)
 
-      // Refresh balances
-      const { data: cData } = await (supabase as any).rpc('get_ledger_balance', { p_ledger_id: customerId })
-      if (cData && cData.length > 0) {
-        setCustomerBalance({ balance: Number(cData[0].current_balance), type: cData[0].balance_type })
-      }
-      const { data: bData } = await (supabase as any).rpc('get_ledger_balance', { p_ledger_id: bankCashId })
-      if (bData && bData.length > 0) {
-        setBankCashBalance({ balance: Number(bData[0].current_balance), type: bData[0].balance_type })
-      }
+      // Refresh customer and bank balances
+      const { data: balData } = await (supabase as any).rpc('get_ledger_balance', { p_ledger_id: customerId })
+      if (balData && balData.length > 0) setCustomerBalance({ balance: Number(balData[0].current_balance), type: balData[0].balance_type })
+      
+      const { data: bBalData } = await (supabase as any).rpc('get_ledger_balance', { p_ledger_id: bankCashId })
+      if (bBalData && bBalData.length > 0) setBankCashBalance({ balance: Number(bBalData[0].current_balance), type: bBalData[0].balance_type })
+
+      // Refresh ledgers data to catch any new quick-added ledgers
+      loadData()
 
       setCustomerId('')
       setBankCashId('')
@@ -277,7 +280,12 @@ export default function ReceiptVoucherPage() {
                 </select>
               </div>
               <div className="form-group">
-                <label className="form-label required">Received In</label>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+                  <label className="form-label required" style={{ margin: 0 }}>Received In</label>
+                  <button type="button" className="btn btn-ghost btn-sm" onClick={() => setQuickAddType('general')} style={{ padding: '0 4px', fontSize: '0.75rem', height: 'auto', color: 'var(--color-primary)' }}>
+                    <Plus size={12} style={{ marginRight: 2 }} /> New Account
+                  </button>
+                </div>
                 <select className="form-control" value={bankCashId} onChange={e => setBankCashId(e.target.value)} required>
                   <option value="">— Select Account —</option>
                   {bankCashAccounts.map(a => (
@@ -294,7 +302,12 @@ export default function ReceiptVoucherPage() {
 
             <div className="form-grid form-grid-2" style={{ marginBottom: '1.5rem' }}>
               <div className="form-group">
-                <label className="form-label required">Customer / Debtor</label>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+                  <label className="form-label required" style={{ margin: 0 }}>Customer / Debtor</label>
+                  <button type="button" className="btn btn-ghost btn-sm" onClick={() => setQuickAddType('customer')} style={{ padding: '0 4px', fontSize: '0.75rem', height: 'auto', color: 'var(--color-primary)' }}>
+                    <Plus size={12} style={{ marginRight: 2 }} /> New Customer
+                  </button>
+                </div>
                 <select className="form-control" value={customerId} onChange={e => setCustomerId(e.target.value)} required>
                   <option value="">— Select Customer —</option>
                   {customers.map(c => (
@@ -340,6 +353,18 @@ export default function ReceiptVoucherPage() {
           </button>
         </div>
       </form>
+      
+      {quickAddType && (
+        <QuickLedgerModal
+          type={quickAddType}
+          companyId={companyId}
+          onClose={() => setQuickAddType(null)}
+          onSaved={() => {
+            setQuickAddType(null)
+            loadData()
+          }}
+        />
+      )}
     </div>
   )
 }

@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useCallback, Suspense } from 'react'
 import { useSearchParams, useRouter } from 'next/navigation'
-import { ArrowLeft, Calendar, Printer, AlertCircle, BookOpen, ChevronRight, FileText, Eye, Mail, X } from 'lucide-react'
+import { ArrowLeft, Calendar, Printer, AlertCircle, BookOpen, ChevronRight, FileText, Eye, Mail, X, Pencil } from 'lucide-react'
 import Link from 'next/link'
 import { supabase as rawSupabase } from '@/lib/supabase/client'
 const supabase = rawSupabase as any
@@ -136,16 +136,44 @@ function LedgerReportContent() {
         runningVal = ledgerOpType === 'Cr' ? ledgerOpVal : -ledgerOpVal
       }
 
-      // Compute starting point prior to startDate
+      let currentSigned = runningVal
       let openingSignedVal = runningVal
+      let debitSum = 0
+      let creditSum = 0
+      const processedLines: RunningBalanceLine[] = []
+
       for (const line of dbLines) {
+        if (line.date > endDate) continue // Ignore future transactions for this report
+
+        const amt = Number(line.amount || 0)
+        
+        // Update running total
+        if (isDrLeaning) {
+          currentSigned += (line.type === 'Dr' ? amt : -amt)
+        } else {
+          currentSigned += (line.type === 'Cr' ? amt : -amt)
+        }
+
         if (line.date < startDate) {
-          const amt = Number(line.amount || 0)
+          openingSignedVal = currentSigned
+        } else {
+          // In range
+          if (line.type === 'Dr') debitSum += amt
+          else creditSum += amt
+          
+          const balVal = Math.abs(currentSigned)
+          let balType: 'Dr' | 'Cr'
           if (isDrLeaning) {
-            openingSignedVal += (line.type === 'Dr' ? amt : -amt)
+            balType = currentSigned >= 0 ? 'Dr' : 'Cr'
           } else {
-            openingSignedVal += (line.type === 'Cr' ? amt : -amt)
+            balType = currentSigned >= 0 ? 'Cr' : 'Dr'
           }
+
+          processedLines.push({
+            ...line,
+            runningBalance: balVal,
+            runningType: balType
+          })
         }
       }
 
@@ -158,47 +186,6 @@ function LedgerReportContent() {
         opBalType = openingSignedVal >= 0 ? 'Cr' : 'Dr'
       }
       setOpBalance({ amount: opBalAmt, type: opBalType })
-
-      // Calculate lines in range and running balance
-      let currentSigned = openingSignedVal
-      let debitSum = 0
-      let creditSum = 0
-      const processedLines: RunningBalanceLine[] = []
-
-      for (const line of dbLines) {
-        const amt = Number(line.amount || 0)
-        
-        // Update running total
-        if (isDrLeaning) {
-          currentSigned += (line.type === 'Dr' ? amt : -amt)
-        } else {
-          currentSigned += (line.type === 'Cr' ? amt : -amt)
-        }
-
-        const inRange = line.date >= startDate && line.date <= endDate
-
-        if (inRange) {
-          if (line.type === 'Dr') debitSum += amt
-          else creditSum += amt
-        }
-
-        // Calculate cumulative state at this line
-        const balVal = Math.abs(currentSigned)
-        let balType: 'Dr' | 'Cr'
-        if (isDrLeaning) {
-          balType = currentSigned >= 0 ? 'Dr' : 'Cr'
-        } else {
-          balType = currentSigned >= 0 ? 'Cr' : 'Dr'
-        }
-
-        if (inRange) {
-          processedLines.push({
-            ...line,
-            runningBalance: balVal,
-            runningType: balType
-          })
-        }
-      }
 
       setLines(processedLines)
       setTotalDebit(debitSum)
@@ -477,23 +464,33 @@ function LedgerReportContent() {
                       <td style={{ padding: '10px 12px' }}>
                         {line.voucher ? (
                           <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-                            <button
-                              onClick={() => viewVoucherDetails(line.voucher!)}
-                              className="no-print"
-                              style={{
-                                border: 'none',
-                                background: 'none',
-                                color: '#1d4ed8',
-                                cursor: 'pointer',
-                                fontWeight: 700,
-                                fontFamily: 'monospace',
-                                textAlign: 'left',
-                                padding: 0
-                              }}
-                              title="Click to view voucher detail"
-                            >
-                              {line.voucher.voucher_number}
-                            </button>
+                            <div style={{ display: 'flex', alignItems: 'center' }}>
+                              <button
+                                onClick={() => viewVoucherDetails(line.voucher!)}
+                                className="no-print"
+                                style={{
+                                  border: 'none',
+                                  background: 'none',
+                                  color: '#1d4ed8',
+                                  cursor: 'pointer',
+                                  fontWeight: 700,
+                                  fontFamily: 'monospace',
+                                  textAlign: 'left',
+                                  padding: 0
+                                }}
+                                title="Click to view voucher detail"
+                              >
+                                {line.voucher.voucher_number}
+                              </button>
+                              <Link 
+                                href={`/vouchers/temp-edit?search=${line.voucher.voucher_number}`} 
+                                className="no-print btn btn-ghost btn-sm" 
+                                style={{ padding: 2, height: 'auto', display: 'inline-flex', marginLeft: 6, color: '#718096' }} 
+                                title="Edit Voucher"
+                              >
+                                <Pencil size={12} />
+                              </Link>
+                            </div>
                             <span className="only-print" style={{ fontFamily: 'monospace', fontWeight: 700 }}>
                               {line.voucher.voucher_number}
                             </span>
@@ -542,10 +539,10 @@ function LedgerReportContent() {
       )}
 
       {/* Voucher Detail Preview Modal */}
-      {selectedVoucher && (
-        <div className="modal-overlay no-print" onClick={() => setSelectedVoucher(null)} style={{ zIndex: 100 }}>
-          <div className="modal-content" onClick={e => e.stopPropagation()} style={{ maxWidth: 800, maxHeight: '90vh', overflow: 'auto' }}>
-            <div className="modal-header">
+      {viewModalOpen && selectedVoucher && (
+        <div className="modal-overlay" onClick={() => setViewModalOpen(false)}>
+          <div className="modal" onClick={e => e.stopPropagation()} style={{ maxWidth: 800, maxHeight: '90vh', overflow: 'auto' }}>
+            <div className="modal-header" style={{ display: 'flex', justifyContent: 'space-between', padding: '1rem', borderBottom: '1px solid var(--color-border-light)' }}>
               <h3>{selectedVoucher.voucher_number} — Journal Preview</h3>
               <div style={{ display: 'flex', gap: '0.5rem' }}>
                 <button className="btn btn-outline btn-sm" onClick={handleVoucherPrint}><Printer size={14} /> Print</button>

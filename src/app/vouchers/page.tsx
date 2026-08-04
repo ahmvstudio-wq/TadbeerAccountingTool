@@ -1,6 +1,7 @@
 'use client'
 import { useEffect, useState, useCallback } from 'react'
-import { Search, Eye, Trash2, AlertCircle, Printer, X, Mail } from 'lucide-react'
+import Link from 'next/link'
+import { Search, Eye, Trash2, AlertCircle, Printer, X, Mail, Pencil } from 'lucide-react'
 import { supabase as rawSupabase } from '@/lib/supabase/client'
 const supabase = rawSupabase as any
 import type { Voucher, VoucherType, JournalLine } from '@/lib/types'
@@ -305,6 +306,7 @@ export default function VouchersPage() {
                   <td style={{ textAlign: 'center' }}>
                     <div style={{ display: 'flex', gap: 4, justifyContent: 'center' }}>
                       <button className="btn btn-ghost btn-sm" onClick={() => viewJournal(v)} title="View"><Eye size={14} /></button>
+                      <Link href={`/vouchers/temp-edit?search=${v.voucher_number}`} className="btn btn-ghost btn-sm" title="Edit"><Pencil size={14} /></Link>
                       <button className="btn btn-ghost btn-sm" onClick={() => openDeleteModal(v.id)} title="Delete" style={{ color: 'var(--color-danger)' }}><Trash2 size={14} /></button>
                     </div>
                   </td>
@@ -316,15 +318,15 @@ export default function VouchersPage() {
       </div>
 
       {/* View Journal Modal */}
-      {selectedVoucher && (
-        <div className="modal-overlay" onClick={() => setSelectedVoucher(null)}>
-          <div className="modal-content" onClick={e => e.stopPropagation()} style={{ maxWidth: 800, maxHeight: '90vh', overflow: 'auto' }}>
+      {viewModalOpen && selectedVoucher && (
+        <div className="modal-overlay" onClick={() => setViewModalOpen(false)}>
+          <div className="modal" onClick={e => e.stopPropagation()} style={{ maxWidth: 800, maxHeight: '90vh', overflow: 'auto' }}>
             <div className="modal-header">
               <h3>{selectedVoucher.voucher_number} — Journal Preview</h3>
               <div style={{ display: 'flex', gap: '0.5rem' }}>
                 <button className="btn btn-outline btn-sm" onClick={handleEmail} style={{ display: 'flex', alignItems: 'center', gap: 4 }}><Mail size={14} /> Email</button>
                 <button className="btn btn-outline btn-sm" onClick={handlePrint}><Printer size={14} /> Print</button>
-                <button className="btn btn-ghost btn-sm" onClick={() => setSelectedVoucher(null)}><X size={16} /></button>
+                <button className="btn btn-ghost btn-sm" onClick={() => setViewModalOpen(false)}><X size={16} /></button>
               </div>
             </div>
             <div className="modal-body" style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
@@ -431,8 +433,8 @@ export default function VouchersPage() {
       {/* Delete Modal */}
       {deleteModalOpen && (
         <div className="modal-overlay" onClick={() => setDeleteModalOpen(false)}>
-          <div className="modal-content" onClick={e => e.stopPropagation()} style={{ maxWidth: 440 }}>
-            <div className="modal-header"><h3>Delete Voucher</h3></div>
+          <div className="modal" onClick={e => e.stopPropagation()} style={{ maxWidth: 440 }}>
+            <div className="modal-header"><h3 className="modal-title">Delete Voucher</h3></div>
             <div className="modal-body">
               <p style={{ marginBottom: '1rem', fontSize: '0.85rem', color: 'var(--color-text-secondary)' }}>
                 This will reverse all journal entries. The voucher number will <strong>never be reused</strong>.

@@ -6,6 +6,7 @@ import { supabase } from '@/lib/supabase/client'
 import { numberToWords } from '@/lib/accounting'
 import type { Ledger, Item } from '@/lib/types'
 import { useUIStore } from '@/store/ui'
+import { QuickLedgerModal, QuickLedgerType } from '@/components/masters/QuickLedgerModal'
 
 interface LineItem {
   item_id?: string
@@ -26,13 +27,15 @@ export default function PurchaseVoucherPage() {
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [success, setSuccess] = useState<string | null>(null)
+  
+  const [quickAddType, setQuickAddType] = useState<QuickLedgerType | null>(null)
 
   const [date, setDate] = useState(new Date().toISOString().split('T')[0])
   const [supplierId, setSupplierId] = useState('')
   const [narration, setNarration] = useState('')
   const [notes, setNotes] = useState('')
   const [lines, setLines] = useState<LineItem[]>([
-    { item_id: '', ledger_id: '', description: '', amount: 0, vat_rate: 5, vat_amount: 0 },
+    { item_id: '', ledger_id: '', description: '', amount: 0, vat_rate: 0, vat_amount: 0 },
   ])
 
   // Real-time Supplier balance
@@ -108,7 +111,7 @@ export default function PurchaseVoucherPage() {
   }
 
   function addLine() {
-    setLines(prev => [...prev, { item_id: '', ledger_id: '', description: '', amount: 0, vat_rate: 5, vat_amount: 0 }])
+    setLines(prev => [...prev, { item_id: '', ledger_id: '', description: '', amount: 0, vat_rate: 0, vat_amount: 0 }])
   }
 
   function removeLine(idx: number) {
@@ -178,7 +181,10 @@ export default function PurchaseVoucherPage() {
       setSupplierId('')
       setNarration('')
       setNotes('')
-      setLines([{ item_id: '', ledger_id: '', description: '', amount: 0, vat_rate: 5, vat_amount: 0 }])
+      setLines([{ item_id: '', ledger_id: '', description: '', amount: 0, vat_rate: 0, vat_amount: 0 }])
+      
+      // Refresh ledgers data to catch any new quick-added ledgers
+      fetchData(companyId)
     } catch (err: any) {
       setError(err.message || 'Network error.')
     } finally {
@@ -216,7 +222,12 @@ export default function PurchaseVoucherPage() {
                 <input type="date" className="form-control" value={date} onChange={e => setDate(e.target.value)} required />
               </div>
               <div className="form-group">
-                <label className="form-label required">Supplier</label>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+                  <label className="form-label required" style={{ margin: 0 }}>Supplier</label>
+                  <button type="button" className="btn btn-ghost btn-sm" onClick={() => setQuickAddType('supplier')} style={{ padding: '0 4px', fontSize: '0.75rem', height: 'auto', color: 'var(--color-primary)' }}>
+                    <Plus size={12} style={{ marginRight: 2 }} /> New Supplier
+                  </button>
+                </div>
                 <select className="form-control" value={supplierId} onChange={e => setSupplierId(e.target.value)} required>
                   <option value="">— Select Supplier —</option>
                   {suppliers.map(s => (
@@ -258,12 +269,17 @@ export default function PurchaseVoucherPage() {
                         </select>
                       </td>
                       <td>
-                        <select className="form-control" value={line.ledger_id} onChange={e => updateLine(idx, 'ledger_id', e.target.value)} style={{ fontSize: '0.85rem' }}>
-                          <option value="">— Select Account —</option>
-                          {expenseAssetAccounts.map(a => (
-                            <option key={a.id} value={a.id}>{a.name}</option>
-                          ))}
-                        </select>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                          <select className="form-control" value={line.ledger_id} onChange={e => updateLine(idx, 'ledger_id', e.target.value)} style={{ fontSize: '0.85rem' }}>
+                            <option value="">— Select Account —</option>
+                            {expenseAssetAccounts.map(a => (
+                              <option key={a.id} value={a.id}>{a.name}</option>
+                            ))}
+                          </select>
+                          <button type="button" className="btn btn-ghost btn-sm" onClick={() => setQuickAddType('general')} style={{ padding: '0 4px' }} title="Add New Ledger">
+                            <Plus size={14} />
+                          </button>
+                        </div>
                       </td>
                       <td>
                         <input className="form-control" placeholder="Description" value={line.description} onChange={e => updateLine(idx, 'description', e.target.value)} style={{ fontSize: '0.85rem' }} />
@@ -336,6 +352,18 @@ export default function PurchaseVoucherPage() {
           </button>
         </div>
       </form>
+      
+      {quickAddType && (
+        <QuickLedgerModal
+          type={quickAddType}
+          companyId={companyId}
+          onClose={() => setQuickAddType(null)}
+          onSaved={() => {
+            setQuickAddType(null)
+            fetchData(companyId)
+          }}
+        />
+      )}
     </div>
   )
 }

@@ -6,6 +6,7 @@ import { supabase } from '@/lib/supabase/client'
 import { numberToWords } from '@/lib/accounting'
 import type { Ledger, Voucher, JournalLine } from '@/lib/types'
 import { useUIStore } from '@/store/ui'
+import { QuickLedgerModal, QuickLedgerType } from '@/components/masters/QuickLedgerModal'
 import { PrintableVoucher } from '@/components/voucher/PrintableVoucher'
 
 interface PaymentLine {
@@ -28,6 +29,8 @@ export default function PaymentVoucherPage() {
   const [postedVoucher, setPostedVoucher] = useState<Voucher | null>(null)
   const [postedJournalLines, setPostedJournalLines] = useState<JournalLine[]>([])
   const [loadingJournal, setLoadingJournal] = useState(false)
+  
+  const [quickAddType, setQuickAddType] = useState<QuickLedgerType | null>(null)
 
   const [date, setDate] = useState(new Date().toISOString().split('T')[0])
   const [bankCashId, setBankCashId] = useState('')
@@ -301,7 +304,12 @@ export default function PaymentVoucherPage() {
                 </select>
               </div>
               <div className="form-group">
-                <label className="form-label required">Paid From</label>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+                  <label className="form-label required" style={{ margin: 0 }}>Paid From</label>
+                  <button type="button" className="btn btn-ghost btn-sm" onClick={() => setQuickAddType('general')} style={{ padding: '0 4px', fontSize: '0.75rem', height: 'auto', color: 'var(--color-primary)' }}>
+                    <Plus size={12} style={{ marginRight: 2 }} /> New Account
+                  </button>
+                </div>
                 <select className="form-control" value={bankCashId} onChange={e => setBankCashId(e.target.value)} required>
                   <option value="">— Select Account —</option>
                   {bankCashAccounts.map(a => (
@@ -326,12 +334,17 @@ export default function PaymentVoucherPage() {
                 {lines.map((line, idx) => (
                   <div key={idx} style={{ display: 'flex', gap: '1rem', alignItems: 'center' }}>
                     <div style={{ flex: 2 }}>
-                      <select className="form-control" value={line.ledger_id} onChange={e => updateLine(idx, 'ledger_id', e.target.value)} required>
-                        <option value="">— Select Ledger —</option>
-                        {payableAccounts.map(a => (
-                          <option key={a.id} value={a.id}>{a.name} [{a.account_code}]</option>
-                        ))}
-                      </select>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                        <select className="form-control" value={line.ledger_id} onChange={e => updateLine(idx, 'ledger_id', e.target.value)} required>
+                          <option value="">— Select Ledger —</option>
+                          {payableAccounts.map(a => (
+                            <option key={a.id} value={a.id}>{a.name} [{a.account_code}]</option>
+                          ))}
+                        </select>
+                        <button type="button" className="btn btn-ghost btn-sm" onClick={() => setQuickAddType('supplier')} style={{ padding: '0 4px' }} title="Add New Supplier">
+                          <Plus size={14} />
+                        </button>
+                      </div>
                       {line.ledger_id && balances[line.ledger_id] && (
                         <span style={{ fontSize: '0.75rem', color: 'var(--color-text-secondary)', display: 'block', marginTop: 2 }}>
                           Balance: OMR {balances[line.ledger_id].balance.toFixed(3)} {balances[line.ledger_id].type}
@@ -377,6 +390,18 @@ export default function PaymentVoucherPage() {
           </button>
         </div>
       </form>
+      
+      {quickAddType && (
+        <QuickLedgerModal
+          type={quickAddType}
+          companyId={companyId}
+          onClose={() => setQuickAddType(null)}
+          onSaved={() => {
+            setQuickAddType(null)
+            loadData()
+          }}
+        />
+      )}
     </div>
   )
 }

@@ -8,6 +8,7 @@ import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import { useUIStore } from '@/store/ui'
+import { QuickLedgerModal, QuickLedgerType } from '@/components/masters/QuickLedgerModal'
 
 const NATURE_LABELS: Record<Nature, string> = {
   ASSET: 'Owned (Asset)',
@@ -58,7 +59,8 @@ export default function MastersPage() {
   const [groups,  setGroups]  = useState<Group[]>([])
   const [ledgers, setLedgers] = useState<Ledger[]>([])
   const [loading, setLoading] = useState(true)
-  const [modal,   setModal]   = useState<'group' | 'ledger' | 'edit-group' | 'edit-ledger' | 'customer' | 'supplier' | null>(null)
+  const [modal,   setModal]   = useState<'group' | 'ledger' | 'edit-group' | 'edit-ledger' | null>(null)
+  const [quickAddType, setQuickAddType] = useState<QuickLedgerType | null>(null)
   
   const [activeGroup, setActiveGroup] = useState<Group | null>(null)
   const [activeLedger, setActiveLedger] = useState<Ledger | null>(null)
@@ -142,10 +144,10 @@ export default function MastersPage() {
         </div>
         <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap' }}>
           {/* Quick creation buttons */}
-          <button className="btn btn-outline btn-sm" onClick={() => setModal('customer')} style={{ borderStyle: 'dashed' }}>
+          <button className="btn btn-outline btn-sm" onClick={() => setQuickAddType('customer')} style={{ borderStyle: 'dashed' }}>
             <UserPlus size={14} /> Quick Add Customer
           </button>
-          <button className="btn btn-outline btn-sm" onClick={() => setModal('supplier')} style={{ borderStyle: 'dashed' }}>
+          <button className="btn btn-outline btn-sm" onClick={() => setQuickAddType('supplier')} style={{ borderStyle: 'dashed' }}>
             <UserCheck size={14} /> Quick Add Supplier
           </button>
           <button className="btn btn-outline btn-sm" onClick={() => { setActiveGroup(null); setModal('group') }}>
@@ -216,13 +218,15 @@ export default function MastersPage() {
       )}
 
       {/* Quick Add Customer/Supplier Modal */}
-      {(modal === 'customer' || modal === 'supplier') && (
-        <QuickPartyModal
-          type={modal}
-          groups={groups}
+      {quickAddType && (
+        <QuickLedgerModal
+          type={quickAddType}
           companyId={currentCompanyId}
-          onClose={() => setModal(null)}
-          onSaved={() => { setModal(null); loadData() }}
+          onClose={() => setQuickAddType(null)}
+          onSaved={() => {
+            setQuickAddType(null)
+            loadData()
+          }}
         />
       )}
     </div>
@@ -859,195 +863,6 @@ function LedgerFormModal({ groups, companyId, ledgerToEdit, onClose, onSaved }: 
             <button type="button" className="btn btn-outline" onClick={onClose}>Cancel</button>
             <button type="submit" className="btn btn-primary" disabled={isSubmitting}>
               {isSubmitting ? 'Saving...' : (ledgerToEdit ? 'Update Account' : 'Create Account')}
-            </button>
-          </div>
-        </form>
-      </div>
-    </div>
-  )
-}
-
-// ---- Quick Add Customer / Supplier Modal ----
-function QuickPartyModal({ type, groups, companyId, onClose, onSaved }: {
-  type: 'customer' | 'supplier'
-  groups: Group[]
-  companyId: string
-  onClose: () => void
-  onSaved: () => void
-}) {
-  const [name, setName] = useState('')
-  const [balance, setBalance] = useState(0)
-  const [phone, setPhone] = useState('')
-  const [email, setEmail] = useState('')
-  const [vatNumber, setVatNumber] = useState('')
-  const [address, setAddress] = useState('')
-  const [desc, setDesc] = useState('')
-  const [error, setError] = useState<string | null>(null)
-  const [loading, setLoading] = useState(false)
-
-  async function handleQuickSave(e: React.FormEvent) {
-    e.preventDefault()
-    if (!name.trim()) {
-      setError('Name is required.')
-      return
-    }
-
-    setLoading(true)
-    setError(null)
-
-    try {
-      let targetGroupName = type === 'customer' ? 'Sundry Debtors' : 'Sundry Creditors'
-      let targetGroupNature = type === 'customer' ? ('ASSET' as Nature) : ('LIABILITY' as Nature)
-      
-      let matchedGroup = groups.find(
-        g => g.name.toLowerCase().includes(targetGroupName.toLowerCase()) && g.nature === targetGroupNature
-      )
-
-      let groupId = matchedGroup?.id
-
-      if (!groupId) {
-        let parentGroup = groups.find(
-          g => g.name.toLowerCase().includes(type === 'customer' ? 'current asset' : 'current liability')
-        )
-        
-        const grpRes = await fetch('/api/groups', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            name: targetGroupName,
-            nature: targetGroupNature,
-            parent_id: parentGroup ? parentGroup.id : null,
-            company_id: companyId,
-          }),
-        })
-
-        if (!grpRes.ok) {
-          const errData = await grpRes.json()
-          throw new Error(errData.error || 'Failed to auto-create parent sub-group.')
-        }
-
-        const newGrp = await grpRes.json()
-        groupId = newGrp.id
-      }
-
-      const balanceNum = Number(balance)
-      const absVal = Math.abs(balanceNum)
-      const sign = balanceNum < 0 ? 'Cr' : (type === 'customer' ? 'Dr' : 'Cr')
-
-      const res = await fetch('/api/ledgers', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          name: name.trim(),
-          group_id: groupId,
-          opening_balance: absVal,
-          opening_type: sign,
-          classification: 'Personal',
-          description: desc.trim() || `${type === 'customer' ? 'Customer' : 'Supplier'} ledger`,
-          company_id: companyId,
-          phone: phone.trim() || null,
-          email: email.trim() || null,
-          vat_number: vatNumber.trim() || null,
-          country: 'Oman',
-          address: address.trim() || null,
-        }),
-      })
-
-      if (res.ok) {
-        onSaved()
-      } else {
-        const errData = await res.json()
-        setError(errData.error || 'Failed to create ledger.')
-      }
-
-    } catch (err: any) {
-      setError(err.message || 'An error occurred during quick setup.')
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  return (
-    <div className="modal-overlay" onClick={onClose}>
-      <div className="modal" onClick={e => e.stopPropagation()} style={{ maxWidth: 500 }}>
-        <div className="modal-header">
-          <span className="modal-title">
-            Quick Add {type === 'customer' ? 'Customer' : 'Supplier'} Ledger
-          </span>
-          <button className="modal-close" onClick={onClose}><X size={18} /></button>
-        </div>
-        <form onSubmit={handleQuickSave}>
-          <div className="modal-body" style={{ display: 'flex', flexDirection: 'column', gap: '0.85rem' }}>
-            {error && (
-              <div className="alert alert-danger" style={{ fontSize: '0.85rem' }}>
-                <AlertCircle size={16} />
-                <span>{error}</span>
-              </div>
-            )}
-            <div style={{ fontSize: '0.8rem', color: 'var(--color-text-secondary)', padding: '0.5rem 0.75rem', background: 'var(--color-teal-pale)', border: '1px solid var(--color-teal-muted)', borderRadius: 'var(--radius-md)' }}>
-              Creates a <strong>Personal</strong> ledger under: <br/>
-              <strong>{type === 'customer' ? 'Assets > Sundry Debtors' : 'Liabilities > Sundry Creditors'}</strong>
-            </div>
-
-            <div className="form-group">
-              <label className="form-label required font-semibold">Name</label>
-              <input
-                className="form-control"
-                placeholder={type === 'customer' ? 'ABC Trading' : 'XYZ LLC'}
-                value={name}
-                onChange={e => setName(e.target.value)}
-                required
-              />
-            </div>
-
-            <div className="form-group">
-              <label className="form-label font-semibold">Opening balance (OMR)</label>
-              <input
-                type="number"
-                step="0.001"
-                className="form-control"
-                placeholder="Positive for Dr, Negative for Cr"
-                value={balance || ''}
-                onChange={e => setBalance(Number(e.target.value))}
-              />
-            </div>
-
-            <div className="form-grid form-grid-2">
-              <div className="form-group">
-                <label className="form-label">Phone Number</label>
-                <input className="form-control" value={phone} onChange={e => setPhone(e.target.value)} placeholder="+968 1234 5678" />
-              </div>
-              <div className="form-group">
-                <label className="form-label">VAT ID Number</label>
-                <input className="form-control" value={vatNumber} onChange={e => setVatNumber(e.target.value)} placeholder="OM123456789" />
-              </div>
-            </div>
-
-            <div className="form-group">
-              <label className="form-label">Email</label>
-              <input type="email" className="form-control" value={email} onChange={e => setEmail(e.target.value)} placeholder="billing@domain.com" />
-            </div>
-
-            <div className="form-group">
-              <label className="form-label">Address</label>
-              <input className="form-control" value={address} onChange={e => setAddress(e.target.value)} placeholder="Muscat, Oman" />
-            </div>
-
-            <div className="form-group">
-              <label className="form-label">Remarks / Description</label>
-              <textarea
-                className="form-control"
-                placeholder="Notes..."
-                value={desc}
-                onChange={e => setDesc(e.target.value)}
-                style={{ height: 48, paddingTop: 8 }}
-              />
-            </div>
-          </div>
-          <div className="modal-footer">
-            <button type="button" className="btn btn-outline" onClick={onClose}>Cancel</button>
-            <button type="submit" className="btn btn-primary" disabled={loading}>
-              {loading ? 'Creating...' : `Create ${type === 'customer' ? 'Customer' : 'Supplier'}`}
             </button>
           </div>
         </form>

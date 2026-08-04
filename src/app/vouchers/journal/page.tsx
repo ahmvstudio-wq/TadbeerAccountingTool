@@ -6,6 +6,7 @@ import { supabase } from '@/lib/supabase/client'
 import { numberToWords } from '@/lib/accounting'
 import type { Ledger, EntryType, Voucher, JournalLine as DBJournalLine } from '@/lib/types'
 import { useUIStore } from '@/store/ui'
+import { QuickLedgerModal, QuickLedgerType } from '@/components/masters/QuickLedgerModal'
 import { PrintableVoucher } from '@/components/voucher/PrintableVoucher'
 
 interface JournalLine {
@@ -29,6 +30,8 @@ export default function JournalVoucherPage() {
   const [postedVoucher, setPostedVoucher] = useState<Voucher | null>(null)
   const [postedJournalLines, setPostedJournalLines] = useState<any[]>([])
   const [loadingJournal, setLoadingJournal] = useState(false)
+  
+  const [quickAddType, setQuickAddType] = useState<QuickLedgerType | null>(null)
 
   const [date, setDate] = useState(new Date().toISOString().split('T')[0])
   const [currency, setCurrency] = useState('OMR')
@@ -146,6 +149,9 @@ export default function JournalVoucherPage() {
         { ledger_id: '', type: 'Dr', amount: 0 },
         { ledger_id: '', type: 'Cr', amount: 0 },
       ])
+      
+      // Refresh ledgers data to catch any new quick-added ledgers
+      loadData()
     } catch (err: any) {
       setError(err.message || 'Network error.')
     } finally {
@@ -346,12 +352,17 @@ export default function JournalVoucherPage() {
                     <tr key={line.origIdx}>
                       <td>{displayIdx + 1}</td>
                       <td>
-                        <select className="form-control" value={line.ledger_id} onChange={e => updateLine(line.origIdx, 'ledger_id', e.target.value)} style={{ fontSize: '0.85rem' }}>
-                          <option value="">— Select Account —</option>
-                          {ledgers.map(a => (
-                            <option key={a.id} value={a.id}>{a.name} [{a.account_code}]</option>
-                          ))}
-                        </select>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                          <select className="form-control" value={line.ledger_id} onChange={e => updateLine(line.origIdx, 'ledger_id', e.target.value)} style={{ fontSize: '0.85rem' }}>
+                            <option value="">— Select Account —</option>
+                            {ledgers.map(a => (
+                              <option key={a.id} value={a.id}>{a.name} [{a.account_code}]</option>
+                            ))}
+                          </select>
+                          <button type="button" className="btn btn-ghost btn-sm" onClick={() => setQuickAddType('general')} style={{ padding: '0 4px' }} title="Add New Ledger">
+                            <Plus size={14} />
+                          </button>
+                        </div>
                       </td>
                       <td>
                         <input type="number" step="any" min="0.001" className="form-control" style={{ textAlign: 'right', fontSize: '0.85rem' }} value={line.amount || ''} onChange={e => updateLine(line.origIdx, 'amount', e.target.value === '' ? 0 : parseFloat(e.target.value) || 0)} />
@@ -389,12 +400,17 @@ export default function JournalVoucherPage() {
                     <tr key={line.origIdx}>
                       <td>{displayIdx + 1}</td>
                       <td>
-                        <select className="form-control" value={line.ledger_id} onChange={e => updateLine(line.origIdx, 'ledger_id', e.target.value)} style={{ fontSize: '0.85rem' }}>
-                          <option value="">— Select Account —</option>
-                          {ledgers.map(a => (
-                            <option key={a.id} value={a.id}>{a.name} [{a.account_code}]</option>
-                          ))}
-                        </select>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                          <select className="form-control" value={line.ledger_id} onChange={e => updateLine(line.origIdx, 'ledger_id', e.target.value)} style={{ fontSize: '0.85rem' }}>
+                            <option value="">— Select Account —</option>
+                            {ledgers.map(a => (
+                              <option key={a.id} value={a.id}>{a.name} [{a.account_code}]</option>
+                            ))}
+                          </select>
+                          <button type="button" className="btn btn-ghost btn-sm" onClick={() => setQuickAddType('general')} style={{ padding: '0 4px' }} title="Add New Ledger">
+                            <Plus size={14} />
+                          </button>
+                        </div>
                       </td>
                       <td>
                         <input type="number" step="any" min="0.001" className="form-control" style={{ textAlign: 'right', fontSize: '0.85rem' }} value={line.amount || ''} onChange={e => updateLine(line.origIdx, 'amount', e.target.value === '' ? 0 : parseFloat(e.target.value) || 0)} />
@@ -452,6 +468,18 @@ export default function JournalVoucherPage() {
           </button>
         </div>
       </form>
+      
+      {quickAddType && (
+        <QuickLedgerModal
+          type={quickAddType}
+          companyId={companyId}
+          onClose={() => setQuickAddType(null)}
+          onSaved={() => {
+            setQuickAddType(null)
+            loadData()
+          }}
+        />
+      )}
     </div>
   )
 }
