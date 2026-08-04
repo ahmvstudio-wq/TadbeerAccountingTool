@@ -2,7 +2,6 @@
 
 import React, { useState } from 'react'
 import { X, AlertCircle } from 'lucide-react'
-import { Group } from '@/types/schema' // Adjust if needed
 
 export type QuickLedgerType = 'customer' | 'supplier' | 'general'
 
