@@ -58,17 +58,24 @@ export default function ReceiptVoucherPage() {
   // Quick-add state for income accounts
   const [showQuickAddIncome, setShowQuickAddIncome] = useState(false)
   const [newIncomeName, setNewIncomeName] = useState('')
+  const [newIncomeGroupId, setNewIncomeGroupId] = useState('')
+  const [newIncomeBalance, setNewIncomeBalance] = useState(0)
+  const [newIncomeClassification, setNewIncomeClassification] = useState('Nominal')
+  const [newIncomeNotes, setNewIncomeNotes] = useState('')
+  const [groups, setGroups] = useState<any[]>([])
 
   const loadData = useCallback(async () => {
     setLoading(true)
     try {
-      const [{ data: ledg }, { data: settings }] = await Promise.all([
+      const [{ data: ledg }, { data: settings }, { data: grps }] = await Promise.all([
         (supabase as any).from('ledgers').select('*, group:groups(id, name, nature)').eq('company_id', companyId).order('name'),
         (supabase as any).from('settings').select('*').eq('company_id', companyId).maybeSingle(),
+        (supabase as any).from('groups').select('*').eq('company_id', companyId).order('name')
       ])
       const fetchedLedgers = ledg ?? []
       setLedgers(fetchedLedgers)
       setCompanySettings(settings)
+      setGroups(grps ?? [])
 
       // Auto-select first customer
       const customersList = fetchedLedgers.filter((l: any) => { const gn = (l.group as any)?.name?.toLowerCase() || ''; return gn.includes('debtor') || gn.includes('customer') })
@@ -76,9 +83,12 @@ export default function ReceiptVoucherPage() {
         setCustomerId(customersList[0].id)
       }
 
-      // Auto-select first bank/cash
+      // Auto-select CASH & BANK [1007]
       const bankCashList = fetchedLedgers.filter((l: any) => { const n = l.name.toLowerCase(); return n.includes('cash') || n.includes('bank') })
-      if (bankCashList.length > 0) {
+      const cashAndBank = bankCashList.find((l: any) => l.account_code === '1007' || l.name.toLowerCase().includes('cash & bank'))
+      if (cashAndBank) {
+        setBankCashId(cashAndBank.id)
+      } else if (bankCashList.length > 0) {
         setBankCashId(bankCashList[0].id)
       }
 

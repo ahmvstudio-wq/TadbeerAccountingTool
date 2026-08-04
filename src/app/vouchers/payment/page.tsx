@@ -74,9 +74,12 @@ export default function PaymentVoucherPage() {
       setLedgers(fetchedLedgers)
       setCompanySettings(settings)
 
-      // Auto-select first bank/cash account
+      // Auto-select CASH & BANK [1007] account if present
       const bankCashList = fetchedLedgers.filter((l: any) => { const n = l.name.toLowerCase(); return n.includes('cash') || n.includes('bank') })
-      if (bankCashList.length > 0) {
+      const cashAndBank = bankCashList.find((l: any) => l.account_code === '1007' || l.name.toLowerCase().includes('cash & bank'))
+      if (cashAndBank) {
+        setBankCashId(cashAndBank.id)
+      } else if (bankCashList.length > 0) {
         setBankCashId(bankCashList[0].id)
       }
 

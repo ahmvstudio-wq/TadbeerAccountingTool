@@ -55,20 +55,27 @@ export default function SalesVoucherPage() {
   // Quick-add state for particulars (income accounts)
   const [showQuickAddIncome, setShowQuickAddIncome] = useState(false)
   const [newIncomeName, setNewIncomeName] = useState('')
+  const [newIncomeGroupId, setNewIncomeGroupId] = useState('')
+  const [newIncomeBalance, setNewIncomeBalance] = useState(0)
+  const [newIncomeClassification, setNewIncomeClassification] = useState('Nominal')
+  const [newIncomeNotes, setNewIncomeNotes] = useState('')
+  const [groups, setGroups] = useState<any[]>([])
 
   const loadData = useCallback(async () => {
     setLoading(true)
     try {
-      const [{ data: ledg }, { data: sett }, { data: itms }] = await Promise.all([
+      const [{ data: ledg }, { data: sett }, { data: itms }, { data: grps }] = await Promise.all([
         (supabase as any).from('ledgers').select('*, group:groups(id, name, nature)').eq('company_id', companyId).order('name'),
         (supabase as any).from('settings').select('*').eq('company_id', companyId).maybeSingle(),
-        (supabase as any).from('items').select('*').eq('company_id', companyId).order('name')
+        (supabase as any).from('items').select('*').eq('company_id', companyId).order('name'),
+        (supabase as any).from('groups').select('*').eq('company_id', companyId).order('name')
       ])
       const fetchedLedgers = ledg ?? []
       const fetchedItems = itms ?? []
       setLedgers(fetchedLedgers)
       setCompanySettings(sett)
       setItems(fetchedItems)
+      setGroups(grps ?? [])
 
       // Auto-select first customer
       const customerList = fetchedLedgers.filter((l: any) => {
@@ -197,17 +204,18 @@ export default function SalesVoucherPage() {
     e.preventDefault()
     if (!newIncomeName.trim()) return
 
-    // Find or create the Income group, then create a ledger under it
-    let incomeGroup = ledgers.find(l => (l.group as any)?.nature === 'INCOME')?.group
-    if (!incomeGroup) {
-      // Try to find a group with nature INCOME
-      const { data: groups } = await (supabase as any).from('groups').select('*').eq('company_id', companyId).eq('nature', 'INCOME').limit(1)
-      incomeGroup = groups?.[0]
-    }
-
-    if (!incomeGroup) {
-      setError('No Income group found. Please create one first in Chart of Accounts.')
-      return
+    let selectedGroupId = newIncomeGroupId
+    if (!selectedGroupId) {
+      let incomeGroup = ledgers.find(l => (l.group as any)?.nature === 'INCOME')?.group
+      if (!incomeGroup) {
+        const { data: grps } = await (supabase as any).from('groups').select('*').eq('company_id', companyId).eq('nature', 'INCOME').limit(1)
+        incomeGroup = grps?.[0]
+      }
+      if (!incomeGroup) {
+        setError('No Income group found. Please create one first in Chart of Accounts.')
+        return
+      }
+      selectedGroupId = incomeGroup.id
     }
 
     const res = await fetch('/api/ledgers', {
@@ -215,9 +223,10 @@ export default function SalesVoucherPage() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         name: newIncomeName.trim(),
-        group_id: incomeGroup.id,
-        opening_balance: 0,
-        classification: 'Nominal',
+        group_id: selectedGroupId,
+        opening_balance: Number(newIncomeBalance) || 0,
+        classification: newIncomeClassification || 'Nominal',
+        description: newIncomeNotes.trim() || null,
         company_id: companyId,
       }),
     })
@@ -226,6 +235,10 @@ export default function SalesVoucherPage() {
       const newLedger = await res.json()
       setLedgers(prev => [...prev, newLedger])
       setNewIncomeName('')
+      setNewIncomeGroupId('')
+      setNewIncomeBalance(0)
+      setNewIncomeClassification('Nominal')
+      setNewIncomeNotes('')
       setShowQuickAddIncome(false)
     } else {
       const err = await res.json()
@@ -699,16 +712,43 @@ export default function SalesVoucherPage() {
       {/* Quick Add Income Account Modal */}
       {showQuickAddIncome && (
         <div className="modal-overlay" onClick={() => setShowQuickAddIncome(false)}>
-          <div className="modal" onClick={e => e.stopPropagation()} style={{ maxWidth: 400 }}>
+          <div className="modal" onClick={e => e.stopPropagation()} style={{ maxWidth: 460 }}>
             <div className="modal-header">
               <span className="modal-title">Quick Add Income Account</span>
               <button className="modal-close" onClick={() => setShowQuickAddIncome(false)}>&times;</button>
             </div>
             <form onSubmit={handleQuickAddIncome}>
-              <div className="modal-body">
+              <div className="modal-body" style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
                 <div className="form-group">
                   <label className="form-label required">Account Name</label>
                   <input className="form-control" value={newIncomeName} onChange={e => setNewIncomeName(e.target.value)} placeholder="e.g. Digital Marketing Services" required autoFocus />
+                </div>
+                <div className="form-group">
+                  <label className="form-label">Parent Group / Category</label>
+                  <select className="form-control" value={newIncomeGroupId} onChange={e => setNewIncomeGroupId(e.target.value)}>
+                    <option value="">— Default (Income Group) —</option>
+                    {groups.map(g => (
+                      <option key={g.id} value={g.id}>{g.name} ({g.nature})</option>
+                    ))}
+                  </select>
+                </div>
+                <div className="form-grid form-grid-2" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+                  <div className="form-group">
+                    <label className="form-label">Opening Balance</label>
+                    <input type="number" step="0.001" className="form-control" value={newIncomeBalance || ''} onChange={e => setNewIncomeBalance(Number(e.target.value))} placeholder="0.000" />
+                  </div>
+                  <div className="form-group">
+                    <label className="form-label">Classification</label>
+                    <select className="form-control" value={newIncomeClassification} onChange={e => setNewIncomeClassification(e.target.value)}>
+                      <option value="Nominal">Nominal</option>
+                      <option value="Real">Real</option>
+                      <option value="Personal">Personal</option>
+                    </select>
+                  </div>
+                </div>
+                <div className="form-group">
+                  <label className="form-label">Description / Notes</label>
+                  <input className="form-control" value={newIncomeNotes} onChange={e => setNewIncomeNotes(e.target.value)} placeholder="Optional description..." />
                 </div>
               </div>
               <div className="modal-footer">
