@@ -195,13 +195,25 @@ export function PrintableVoucher({ voucher, journalLines, voucherLines = [], set
   // Standardize lines computation across ALL voucher types
   let linesToRender: any[] = []
   
-  if (voucher.type === 'RECEIPT') {
-    // For RECEIPT vouchers specifically, Particulars shows ONLY the Mode of Payment
-    const drLine = journalLines.find(jl => jl.type === 'Dr')
-    const bankOrCashName = drLine?.ledger?.name || 'Bank / Cash Account'
-    const refText = voucher.ref ? ` (${voucher.ref})` : ''
+  if (voucher.type === 'RECEIPT' || voucher.type === 'PAYMENT') {
+    // Particulars shows the actual service / narration details (not bank name)
+    let desc = voucher.narration || ''
+    if (!desc && voucherLines && voucherLines.length > 0 && voucherLines[0].description) {
+      desc = voucherLines[0].description
+    }
+    if (!desc) {
+      const offsetLine = journalLines.find(jl => {
+        const name = jl.ledger?.name || ''
+        return name && name !== voucher.party_name && !name.toLowerCase().includes('cash') && !name.toLowerCase().includes('bank')
+      })
+      desc = offsetLine?.ledger?.name || ''
+    }
+    if (!desc) {
+      desc = voucher.type === 'RECEIPT' ? 'Payment Received' : 'Payment Made'
+    }
+
     linesToRender = [{
-      description: `${bankOrCashName}${refText}`,
+      description: desc,
       quantity: 1,
       rate: grandTotal,
       amount: grandTotal,
