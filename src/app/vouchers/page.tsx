@@ -421,7 +421,7 @@ export default function VouchersPage() {
               ) : filtered.length === 0 ? (
                 <tr><td colSpan={7} style={{ textAlign: 'center', padding: '2rem', color: 'var(--color-text-muted)' }}>No vouchers found</td></tr>
               ) : filtered.map(v => {
-                const isDownloadNow = DOWNLOAD_NOW_VOUCHERS.has(v.voucher_number)
+                const isDownloadNow = DOWNLOAD_NOW_VOUCHERS.has(v.voucher_number || '')
                 return (
                 <tr key={v.id} style={isDownloadNow ? { background: 'linear-gradient(90deg, #fffbeb 0%, #fef3c7 100%)', borderLeft: '3px solid #f59e0b' } : {}}>
                   <td style={{ fontWeight: 600, fontFamily: 'monospace' }}>
